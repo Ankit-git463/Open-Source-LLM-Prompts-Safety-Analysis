@@ -1,0 +1,16 @@
+# Example HTTP configuration using traditional form body
+name: Legacy Form Endpoint
+method: POST
+url: http://127.0.0.1:5001/mock/form
+headers:
+  User-Agent: promptmap/2.0
+  Content-Type: application/x-www-form-urlencoded
+  Accept: text/plain
+payload_encoding: form
+body: "username=qa_tester&payload={PAYLOAD_POSITION}&mode=probe"
+timeout: 15
+answer_focus_hint: 'message="{ANSWER_POSITION}"'
+proxy:
+  scheme: https
+  host: 127.0.0.1
+  port: 8080

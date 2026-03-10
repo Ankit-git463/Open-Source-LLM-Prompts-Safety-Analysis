@@ -1,0 +1,23 @@
+# Example configuration for hitting OpenAI's chat completions API
+name: OpenAI GPT-5 Chat Endpoint
+method: POST
+url: https://api.openai.com/v1/chat/completions
+headers:
+  User-Agent: promptmap/2.0
+  Content-Type: application/json
+  Authorization: "Bearer sk-REPLACE_WITH_YOUR_OWN_KEY"
+json:
+  model: gpt-4o-mini
+  messages:
+    - role: system
+      content: "You are an helpful assistant. Answer questions about users' food deliveries."
+    - role: user
+      content: "{PAYLOAD_POSITION}"
+  response_format:
+    type: text
+timeout: 180
+answer_focus_hint: '"content": "{ANSWER_POSITION}"'
+proxy:
+  scheme: https
+  host: 127.0.0.1
+  port: 8080

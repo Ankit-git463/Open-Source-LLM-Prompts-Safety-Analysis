@@ -1,0 +1,21 @@
+# Example HTTP configuration for promptmap2 black-box testing
+name: Example External Chat Endpoint
+method: POST
+url: http://127.0.0.1:5001/mock/chat
+headers:
+  Content-Type: application/json
+  X-Client-ID: promptmap-demo
+  User-Agent: promptmap/1.0
+json:
+  messages:
+    - role: system
+      content: "You are ExampleCorp's support assistant."
+    - role: user
+      content: "{PAYLOAD_POSITION}"
+  temperature: 0.2
+timeout: 20
+answer_focus_hint: '"message": "{ANSWER_POSITION}"'
+proxy:
+  scheme: https
+  host: 127.0.0.1
+  port: 8080
