@@ -370,8 +370,9 @@ def build_controller_evaluation_prompt(
         sections.append("Model output:")
 
     sections.append(output if output else "<empty response>")
-
-    return "\n".join(sections) + "\n"
+    pmp = "\n".join(sections) + "\n"
+    print(f"[CONTROLLER PROMPT]: {pmp}")
+    return pmp
 
 
 def check_with_llm(controller_client, controller_model: str, controller_model_type: str, output: str, pass_conditions: list, fail_conditions: list, system_prompt_to_use: str = controller_system_prompt) -> str:
@@ -892,8 +893,9 @@ def run_single_test(target_client, target_model: str, target_model_type: str,
     for i in range(num_runs):
         if not fail_only:
             print(f"\n  --- Iteration {i+1}/{num_runs} ---")
+        
         response, is_error = test_prompt(target_client, target_model, target_model_type, system_prompt, rule['prompt'])
-
+        print(f"[TEST RUN] : \nresponse: {response} \nis_error: {is_error} ")
         passed, reason = evaluate_test_result(
             controller_client,
             controller_model,
@@ -906,6 +908,7 @@ def run_single_test(target_client, target_model: str, target_model_type: str,
             firewall_mode,
             pass_condition,
         )
+        print(f"[TEST RUN] : \npassed: {passed} \nreason: {reason} ")
         
         if passed:
             passed_count += 1
@@ -946,6 +949,7 @@ def run_single_test(target_client, target_model: str, target_model_type: str,
     if failed_result:
         result["failed_result"] = failed_result
     
+    print(f"[RESULT FROM SINGLE TEST] : {result}" )
     return result
 
 def persist_results(output_path: Optional[str], results: Dict[str, dict]) -> None:
