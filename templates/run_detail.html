@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>PromptMap - Run Detail</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css"/>
+  <style>
+    :root{--dark:#182033;--red:#d64545;--green:#2a9d5c;--line:#e6e8ee;--muted:#6b7280;--shadow:0 14px 40px rgba(24, 32, 51, 0.08);}
+    body{background:radial-gradient(circle at top left, rgba(214,69,69,.08), transparent 24%), linear-gradient(180deg, #f6f7fb 0%, #eef1f6 100%);font-family:'Segoe UI',system-ui,sans-serif;}
+    .navbar{background:var(--dark)!important;border-bottom:1px solid rgba(255,255,255,.08);box-shadow:0 10px 28px rgba(24,32,51,.18);}
+    .navbar-brand{color:#fff!important;font-weight:700;letter-spacing:1px;font-size:1.1rem;}
+    .navbar-brand span{color:var(--red);}
+    .hero-strip{background:linear-gradient(135deg, rgba(24,32,51,.98), rgba(37,48,74,.94));color:#fff;padding:22px 24px;border-radius:20px;margin-bottom:16px;box-shadow:var(--shadow);}
+    .meta-banner{background:var(--dark);color:#fff;padding:16px 24px;border-radius:10px;margin-bottom:20px;}
+    .meta-banner .model-name{font-size:1.4rem;font-weight:700;}
+    .meta-banner .sub{color:rgba(255,255,255,.6);font-size:.82rem;}
+    .stat-box{text-align:center;padding:8px 16px;background:rgba(255,255,255,.08);border-radius:8px;}
+    .stat-box .n{font-size:1.6rem;font-weight:700;line-height:1;}
+    .stat-box .l{font-size:.68rem;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,.5);}
+    .test-row{background:#fff;border-radius:8px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;border-left:4px solid transparent;transition:border-color .15s;}
+    .test-row.pass{border-left-color:var(--green);}
+    .test-row.fail{border-left-color:var(--red);}
+    .test-row:hover{box-shadow:0 2px 10px rgba(0,0,0,.1);}
+    .test-row .test-name{font-weight:600;font-size:.9rem;}
+    .badge-pass{background:var(--green)!important;}
+    .badge-fail{background:var(--red)!important;}
+    .badge-sev-high{background:#c0392b!important;}
+    .badge-sev-medium{background:#e67e22!important;}
+    .badge-sev-low{background:#7f8c8d!important;}
+    #detail-panel{display:none;}
+    .panel-card{background:rgba(255,255,255,.94);border-radius:18px;border:1px solid rgba(255,255,255,.7);box-shadow:var(--shadow);margin-bottom:16px;}
+    .panel-card .card-header-custom{background:var(--dark);color:#fff;padding:10px 16px;border-radius:10px 10px 0 0;font-weight:600;font-size:.85rem;}
+    .iter-tab{cursor:pointer;padding:6px 14px;border-radius:20px;font-size:.78rem;background:#f0f2f5;border:1px solid #dee2e6;margin:2px;}
+    .iter-tab.active{background:var(--dark);color:#fff;border-color:var(--dark);}
+    .iter-tab.pass-tab{border-color:var(--green);}
+    .iter-tab.fail-tab{border-color:var(--red);}
+    .code-block{background:#0d1117;color:#c9d1d9;font-family:'Consolas','Courier New',monospace;font-size:.78rem;border-radius:6px;padding:12px;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow-y:auto;line-height:1.6;}
+    .verdict-pass{color:var(--green);font-weight:700;}
+    .verdict-fail{color:var(--red);font-weight:700;}
+    .section-label{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px;}
+    .filter-bar{background:rgba(255,255,255,.94);padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.7);box-shadow:var(--shadow);margin-bottom:12px;}
+    .judge-row{border:1px solid var(--line);border-radius:14px;padding:10px;background:#fafbfc;}
+  </style>
+</head>
+<body>
+<nav class="navbar navbar-dark mb-0">
+  <div class="container-fluid px-4">
+    <span class="navbar-brand"><i class="bi bi-shield-shaded me-2"></i>Prompt<span>Map</span></span>
+    <div class="d-flex gap-3 align-items-center">
+      <a href="/" style="color:#fff;font-size:.85rem;text-decoration:none;font-weight:600"><i class="bi bi-play-fill me-1"></i>Run Tests</a>
+      <a href="/history" style="color:rgba(255,255,255,.7);font-size:.85rem;text-decoration:none"><i class="bi bi-clock-history me-1"></i>History</a>
+      <a href="/compare" style="color:rgba(255,255,255,.7);font-size:.85rem;text-decoration:none"><i class="bi bi-bar-chart-line me-1"></i>Compare</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid px-4 py-3">
+  <div class="hero-strip">
+    <div class="small text-uppercase fw-semibold mb-2" style="letter-spacing:1.1px;color:rgba(255,255,255,.68)">Run Detail</div>
+    <h5 class="fw-bold mb-1">Inspect saved responses, votes, and final verdicts.</h5>
+    <p class="mb-0" style="color:rgba(255,255,255,.72)">Use this page to review one run in depth, add judge models, and rerun judgment on stored responses without regenerating them.</p>
+  </div>
+  <div id="loading" class="text-center py-5 text-muted">
+    <div class="spinner-border text-secondary mb-2"></div><br>Loading run data...
+  </div>
+  <div id="error-msg" class="alert alert-danger" style="display:none"></div>
+
+  <div id="main-content" style="display:none">
+    <div class="meta-banner mb-3">
+      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+        <div>
+          <div class="model-name" id="m-model"></div>
+          <div class="sub" id="m-sub"></div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap" id="stat-boxes"></div>
+        <div class="d-flex gap-2 align-items-center">
+          <a id="dl-json" href="#" class="btn btn-sm btn-outline-light"><i class="bi bi-filetype-json me-1"></i>JSON</a>
+          <a id="dl-csv" href="#" class="btn btn-sm btn-outline-light"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
+          <button id="judge-run-btn" class="btn btn-sm btn-outline-warning" onclick="judgeRun()"><i class="bi bi-check2-square me-1"></i>Judge Run</button>
+          <button id="rerun-btn" class="btn btn-sm btn-danger" onclick="runAgain()"><i class="bi bi-arrow-repeat me-1"></i>Run Again</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-card mb-3">
+      <div class="card-header-custom d-flex justify-content-between align-items-center">
+        <span>Run Progress</span>
+        <span id="run-progress-badge" class="badge bg-secondary">Idle</span>
+      </div>
+      <div class="p-3">
+        <div id="run-progress-log" class="code-block" style="max-height:220px;">Use "Run Again" to start a new actor run from this page.</div>
+      </div>
+    </div>
+
+    <div class="panel-card mb-3">
+      <div class="card-header-custom">Judge Configuration</div>
+      <div class="p-3">
+        <div id="judge-status" class="small text-muted mb-2"></div>
+        <div id="judge-list" class="d-flex flex-column gap-2 mb-2"></div>
+        <button class="btn btn-sm btn-outline-secondary" onclick="addJudgeRow()">Add Judge</button>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-lg-4">
+        <div class="filter-bar d-flex gap-2">
+          <input id="search" type="text" class="form-control form-control-sm" placeholder="Search tests..." oninput="filterTests()"/>
+          <select id="filter-verdict" class="form-select form-select-sm w-auto" onchange="filterTests()">
+            <option value="">All</option>
+            <option value="pass">Pass</option>
+            <option value="fail">Fail</option>
+          </select>
+          <select id="filter-type" class="form-select form-select-sm w-auto" onchange="filterTests()">
+            <option value="">Type</option>
+          </select>
+        </div>
+        <div id="test-list"></div>
+      </div>
+
+      <div class="col-lg-8">
+        <div id="detail-panel">
+          <div class="panel-card mb-3">
+            <div class="card-header-custom d-flex justify-content-between align-items-center">
+              <span id="d-name">Test Detail</span>
+              <span id="d-badge"></span>
+            </div>
+            <div class="p-3">
+              <div class="row g-3 mb-2">
+                <div class="col-sm-3"><div class="section-label">Type</div><span id="d-type" class="badge bg-secondary"></span></div>
+                <div class="col-sm-3"><div class="section-label">Severity</div><span id="d-severity" class="badge"></span></div>
+                <div class="col-sm-3"><div class="section-label">Pass Rate</div><strong id="d-passrate"></strong></div>
+                <div class="col-sm-3"><div class="section-label">Passed / Total</div><strong id="d-counts"></strong></div>
+              </div>
+
+              <div id="d-prompt-container" class="mb-3" style="display:none;">
+                <div class="section-label">Test Prompt</div>
+                <div class="code-block" id="d-prompt" style="max-height:120px;background:#1e1e1e;color:#d4d4d4;"></div>
+              </div>
+
+              <div id="d-conditions" class="row g-2"></div>
+              <div id="d-metadata" class="mt-3 pt-2 border-top" style="display:none">
+                <div class="section-label">Additional Metadata</div>
+                <div id="d-meta-content" class="row g-2 small text-muted"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card mb-3">
+            <div class="card-header-custom">Iterations</div>
+            <div class="p-3">
+              <div id="iter-tabs" class="d-flex flex-wrap gap-1 mb-3"></div>
+              <div id="iter-content"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="placeholder" class="text-center py-5 text-muted" style="font-size:.9rem">
+          <i class="bi bi-arrow-left-circle fs-3 d-block mb-2"></i>
+          Select a test from the list to view full detail
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<script>
+const JOB_ID = "{{ job_id }}";
+let runData = null;
+let allTests = [];
+let selectedTest = null;
+let judgePollTimer = null;
+let runPollTimer = null;
+const GOOGLE_JUDGE_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+let availableJudges = { ollama: [], google: GOOGLE_JUDGE_MODELS };
+const ACTIVE_JOB_KEY = "promptmap.activeJob";
+const LATEST_RUN_KEY = "promptmap.latestRunId";
+
+function esc(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function escAttr(s){ return esc(s).replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+
+async function fetchJudgeModels() {
+  const cfg = runData?.config || {};
+  const meta = runData?.meta || {};
+  const url = cfg.ollama_url || "http://localhost:11434";
+  const ollamaModels = [];
+  const addOllamaModel = (model) => {
+    if (model && !ollamaModels.includes(model)) ollamaModels.push(model);
+  };
+  if ((cfg.target_model_type || meta.target_model_type) === "ollama") {
+    const savedTarget = cfg.target_model || meta.target_model;
+    addOllamaModel(savedTarget);
+  }
+  (meta.judge_models || []).forEach(j => {
+    if (j.model_type === "ollama") addOllamaModel(j.model);
+  });
+
+  try {
+    const r = await fetch(`/api/ollama-models?url=${encodeURIComponent(url)}`);
+    const data = await r.json();
+    (data.models || []).forEach(addOllamaModel);
+  } catch {
+    // Keep saved run models as the fallback.
+  }
+
+  availableJudges = {
+    ollama: ollamaModels,
+    google: GOOGLE_JUDGE_MODELS,
+  };
+
+  refreshJudgeSelectors();
+}
+
+function setRunProgressStatus(status) {
+  const el = document.getElementById("run-progress-badge");
+  const map = {
+    idle: ["Idle", "bg-secondary"],
+    running: ["Running", "bg-warning text-dark"],
+    done: ["Done", "bg-success"],
+    error: ["Error", "bg-danger"],
+  };
+  const [text, cls] = map[status] || map.idle;
+  el.className = `badge ${cls}`;
+  el.textContent = text;
+}
+
+function setRunProgressLog(text) {
+  document.getElementById("run-progress-log").textContent = text;
+}
+
+function appendRunProgress(lines) {
+  const box = document.getElementById("run-progress-log");
+  const text = Array.isArray(lines) ? lines.join("\n") : String(lines || "");
+  box.textContent += (box.textContent ? "\n" : "") + text;
+  box.scrollTop = box.scrollHeight;
+}
+
+function addJudgeRow(modelType = "ollama", model = "") {
+  const list = document.getElementById("judge-list");
+  const row = document.createElement("div");
+  row.className = "judge-row";
+  row.innerHTML = `
+    <div class="row g-2 align-items-center">
+      <div class="col-sm-3">
+        <select class="form-select form-select-sm judge-type" onchange="updateJudgeModelOptions(this.closest('.judge-row'))">
+          <option value="ollama" ${modelType === "ollama" ? "selected" : ""}>Ollama</option>
+          <option value="google" ${modelType === "google" ? "selected" : ""}>Google</option>
+        </select>
+      </div>
+      <div class="col-sm-7">
+        <select class="form-select form-select-sm judge-model"></select>
+      </div>
+      <div class="col-sm-2 text-end">
+        <button class="btn btn-sm btn-outline-danger" onclick="removeJudgeRow(this)">Remove</button>
+      </div>
+    </div>
+  `;
+  list.appendChild(row);
+  updateJudgeModelOptions(row, model);
+}
+
+function removeJudgeRow(btn) {
+  const list = document.getElementById("judge-list");
+  btn.closest(".judge-row").remove();
+  if (!list.children.length) addJudgeRow();
+}
+
+function getJudgePayload() {
+  return [...document.querySelectorAll("#judge-list .judge-row")].map(row => ({
+    model_type: row.querySelector(".judge-type").value,
+    model: row.querySelector(".judge-model").value,
+  })).filter(j => j.model);
+}
+
+function updateJudgeModelOptions(row, selected = "") {
+  if (!row) return;
+  const type = row.querySelector(".judge-type").value;
+  const select = row.querySelector(".judge-model");
+  const models = availableJudges[type] || [];
+  select.innerHTML = models.length
+    ? models.map(m => `<option value="${escAttr(m)}" ${m === selected ? "selected" : ""}>${esc(m)}</option>`).join("")
+    : `<option value="">No ${type} models available</option>`;
+  select.disabled = !models.length;
+}
+
+function refreshJudgeSelectors() {
+  document.querySelectorAll("#judge-list .judge-row").forEach(row => {
+    const current = row.querySelector(".judge-model")?.value || "";
+    updateJudgeModelOptions(row, current);
+  });
+}
+
+async function load(){
+  try{
+    const r = await fetch(`/api/run-detail/${JOB_ID}`);
+    if(!r.ok) throw new Error("Run not found ("+r.status+")");
+    runData = await r.json();
+    await fetchJudgeModels();
+    render();
+  }catch(e){
+    document.getElementById("loading").style.display="none";
+    const eb = document.getElementById("error-msg");
+    eb.textContent = "Error loading run: " + e.message;
+    eb.style.display = "";
+  }
+}
+
+async function judgeRun() {
+  const judges = getJudgePayload();
+  if (!judges.length) {
+    alert("Add at least one judge model.");
+    return;
+  }
+
+  document.getElementById("judge-run-btn").disabled = true;
+  document.getElementById("judge-status").textContent = "Judging saved responses...";
+  setRunProgressStatus("running");
+  setRunProgressLog(`Starting judging for run ${JOB_ID}...`);
+  const res = await fetch("/api/judge", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      run_id: JOB_ID,
+      judges,
+      google_api_key: runData?.config?.google_api_key || null,
+      ollama_url: runData?.config?.ollama_url || "http://localhost:11434",
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById("judge-status").textContent = data.error || "Judging failed to start.";
+    setRunProgressStatus("error");
+    appendRunProgress(data.error || "Judging failed to start.");
+    document.getElementById("judge-run-btn").disabled = false;
+    return;
+  }
+  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: data.job_id, run_id: JOB_ID, mode: "judge" }));
+  localStorage.setItem(LATEST_RUN_KEY, JOB_ID);
+  pollJudgeJob(data.job_id);
+}
+
+async function runAgain() {
+  const cfg = runData?.config || {};
+  if (!cfg.target_model || !cfg.target_model_type) {
+    alert("Saved run configuration is not available for rerun.");
+    return;
+  }
+  if (!confirm("Run this saved configuration again and create a new response run?")) {
+    return;
+  }
+
+  document.getElementById("rerun-btn").disabled = true;
+  setRunProgressStatus("running");
+  setRunProgressLog("Starting rerun...");
+
+  const rerunCfg = { ...cfg };
+  const judges = getJudgePayload();
+  if (judges.length) rerunCfg.judges = judges;
+
+  const res = await fetch("/api/run", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(rerunCfg),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    setRunProgressStatus("error");
+    setRunProgressLog(data.error || "Failed to start rerun.");
+    document.getElementById("rerun-btn").disabled = false;
+    return;
+  }
+  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: data.job_id, run_id: data.run_id, mode: "generate" }));
+  localStorage.setItem(LATEST_RUN_KEY, data.run_id);
+  pollRunJob(data.job_id, data.run_id);
+}
+
+function pollRunJob(jobId, runId) {
+  if (runPollTimer) clearInterval(runPollTimer);
+  let lastLogLen = 0;
+  runPollTimer = setInterval(async () => {
+    const r = await fetch(`/api/job/${jobId}`);
+    const data = await r.json();
+    const newLines = (data.logs || []).slice(lastLogLen);
+    if (newLines.length) {
+      appendRunProgress(newLines);
+      lastLogLen = data.logs.length;
+    }
+    if (data.status === "done") {
+      clearInterval(runPollTimer);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setRunProgressStatus("done");
+      appendRunProgress(`Rerun complete. Opening run ${runId}...`);
+      window.location.href = `/run/${runId}`;
+    } else if (data.status === "error") {
+      clearInterval(runPollTimer);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setRunProgressStatus("error");
+      appendRunProgress("Rerun failed.");
+      document.getElementById("rerun-btn").disabled = false;
+    }
+  }, 800);
+}
+
+function pollJudgeJob(jobId) {
+  if (judgePollTimer) clearInterval(judgePollTimer);
+  let lastLogLen = 0;
+  judgePollTimer = setInterval(async () => {
+    const r = await fetch(`/api/job/${jobId}`);
+    const data = await r.json();
+    const newLines = (data.logs || []).slice(lastLogLen);
+    if (newLines.length) {
+      appendRunProgress(newLines);
+      lastLogLen = data.logs.length;
+    }
+    if (data.status === "done") {
+      clearInterval(judgePollTimer);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setRunProgressStatus("done");
+      const finishedLog = document.getElementById("run-progress-log").textContent;
+      runData = data.result;
+      render();
+      setRunProgressStatus("done");
+      setRunProgressLog(finishedLog);
+      appendRunProgress("Judging complete.");
+      document.getElementById("judge-status").textContent = "Judging complete. Conservative voting and disagreement metrics have been applied.";
+      document.getElementById("judge-run-btn").disabled = false;
+    } else if (data.status === "error") {
+      clearInterval(judgePollTimer);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setRunProgressStatus("error");
+      appendRunProgress("Judging failed.");
+      document.getElementById("judge-status").textContent = "Judging failed.";
+      document.getElementById("judge-run-btn").disabled = false;
+    }
+  }, 1000);
+}
+
+function render(){
+  document.getElementById("loading").style.display="none";
+  document.getElementById("main-content").style.display="";
+
+  const meta  = runData.meta || {};
+  const tests = runData.tests || {};
+  const pct = meta.pass_rate_pct || 0;
+  const pCol = pct >= 70 ? "#4ec9b0" : pct >= 40 ? "#dcdcaa" : "#f48771";
+
+  document.getElementById("m-model").textContent = meta.target_model || "Unknown model";
+  document.getElementById("m-sub").innerHTML =
+    `${esc(meta.target_model_type || "")} · Status: ${esc(meta.status || "responses_saved")} · ${esc(meta.started_at || "")} → ${esc(meta.finished_at || "")}`;
+
+  document.getElementById("stat-boxes").innerHTML = `
+    <div class="stat-box"><div class="n">${meta.total_tests || 0}</div><div class="l">Total</div></div>
+    <div class="stat-box"><div class="n" style="color:#4ec9b0">${meta.total_passed || 0}</div><div class="l">Passed</div></div>
+    <div class="stat-box"><div class="n" style="color:#f48771">${meta.total_failed || 0}</div><div class="l">Failed</div></div>
+    <div class="stat-box"><div class="n" style="color:${meta.status === "judged" ? pCol : "#fff"}">${meta.status === "judged" ? `${pct}%` : (meta.pending_tests || 0)}</div><div class="l">${meta.status === "judged" ? "Pass Rate" : "Pending Judge"}</div></div>
+  `;
+
+  document.getElementById("dl-json").href = `/api/download/${JOB_ID}/json`;
+  document.getElementById("dl-csv").href = `/api/download/${JOB_ID}/csv`;
+  document.getElementById("judge-status").textContent = meta.status === "judged"
+    ? `Latest judgment used ${meta.latest_judgment?.judge_count || 0} judge model(s). Disagreement: ${meta.judge_disagreement_rate_pct || 0}%. Conservative high-risk failures: ${meta.conservative_high_risk_failures || 0}.`
+    : "Responses are saved locally. Run judging when you're ready.";
+  document.getElementById("rerun-btn").innerHTML = meta.status === "judged"
+    ? '<i class="bi bi-arrow-repeat me-1"></i>Run Again'
+    : '<i class="bi bi-play-fill me-1"></i>Run This Config';
+  document.getElementById("rerun-btn").disabled = !(runData.config && runData.config.target_model);
+  setRunProgressStatus("idle");
+  setRunProgressLog('Use "Run Again" to start a new actor run from this page.');
+
+  const judgeList = document.getElementById("judge-list");
+  judgeList.innerHTML = "";
+  const existingJudges = meta.judge_models || [];
+  if (existingJudges.length) {
+    existingJudges.forEach(j => addJudgeRow(j.model_type, j.model));
+  } else {
+    addJudgeRow();
+  }
+
+  allTests = Object.values(tests);
+  populateTypeFilter();
+  renderTestList(allTests);
+}
+
+function populateTypeFilter(){
+  const types = [...new Set(allTests.map(t=>t.type))].sort();
+  const sel = document.getElementById("filter-type");
+  sel.innerHTML = '<option value="">Type</option>';
+  types.forEach(t=>{
+    const o = document.createElement("option");
+    o.value = t;
+    o.textContent = t;
+    sel.appendChild(o);
+  });
+}
+
+function renderTestList(list){
+  document.getElementById("test-list").innerHTML = list.map(t => {
+    const p = t.passed;
+    const pending = p === null || p === undefined;
+    const sevCls = t.severity==="high"?"badge-sev-high":t.severity==="medium"?"badge-sev-medium":"badge-sev-low";
+    return `
+      <div class="test-row ${pending ? "" : (p?"pass":"fail")} p-3" onclick="selectTest('${esc(t.name)}')">
+        <div class="d-flex justify-content-between align-items-start">
+          <div class="test-name">${esc(t.name)}</div>
+          <span class="badge ${pending ? "bg-primary" : (p?"badge-pass":"badge-fail")} ms-2">${pending ? "PENDING" : (p?"PASS":"FAIL")}</span>
+        </div>
+        <div class="mt-1 d-flex gap-1 flex-wrap">
+          <span class="badge bg-secondary">${esc(t.type)}</span>
+          <span class="badge ${sevCls}">${esc(t.severity)}</span>
+          <span class="text-muted" style="font-size:.72rem">${esc(t.pass_rate)}</span>
+        </div>
+      </div>`;
+  }).join("") || '<div class="text-muted text-center py-3">No tests match</div>';
+}
+
+function filterTests(){
+  const q = document.getElementById("search").value.toLowerCase();
+  const v = document.getElementById("filter-verdict").value;
+  const ty = document.getElementById("filter-type").value;
+  const filtered = allTests.filter(t =>
+    (!q || t.name.toLowerCase().includes(q)) &&
+    (!v || (v === "pass" ? t.passed === true : t.passed === false)) &&
+    (!ty || t.type === ty)
+  );
+  renderTestList(filtered);
+}
+
+function selectTest(name){
+  selectedTest = name;
+  const t = runData.tests[name];
+  if(!t) return;
+
+  document.getElementById("placeholder").style.display="none";
+  document.getElementById("detail-panel").style.display="block";
+
+  const passed = t.passed;
+  const pending = passed === null || passed === undefined;
+  document.getElementById("d-name").textContent = name;
+  document.getElementById("d-badge").innerHTML = `<span class="badge ${pending ? "bg-primary" : (passed ? "badge-pass" : "badge-fail")}">${pending ? "PENDING" : (passed ? "PASS" : "FAIL")}</span>`;
+  document.getElementById("d-type").textContent = t.type || "";
+  const sevCls = t.severity==="high"?"badge-sev-high":t.severity==="medium"?"badge-sev-medium":"badge-sev-low";
+  const sevEl = document.getElementById("d-severity");
+  sevEl.textContent = t.severity || "";
+  sevEl.className = `badge ${sevCls}`;
+  document.getElementById("d-passrate").textContent = t.pass_rate || "";
+  document.getElementById("d-counts").textContent = `${t.passed_count ?? 0} / ${t.total_iterations ?? 0}`;
+
+  const pElC = document.getElementById("d-prompt-container");
+  if (t.prompt) {
+    pElC.style.display = "";
+    document.getElementById("d-prompt").textContent = t.prompt;
+  } else {
+    pElC.style.display = "none";
+    document.getElementById("d-prompt").textContent = "";
+  }
+
+  const pc = t.pass_conditions || [];
+  const fc = t.fail_conditions || [];
+  document.getElementById("d-conditions").innerHTML = `
+    ${pc.length ? `<div class="col-md-6"><div class="section-label">Pass Conditions</div><ul class="mb-0" style="font-size:.8rem">${pc.map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+    ${fc.length ? `<div class="col-md-6"><div class="section-label">Fail Conditions</div><ul class="mb-0" style="font-size:.8rem">${fc.map(c=>`<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+  `;
+
+  const skip = ["name","type","severity","prompt","pass_conditions","fail_conditions","passed","pass_rate","passed_count","total_iterations","iterations","description","judged"];
+  const extraMeta = Object.entries(t).filter(([k,v]) => !skip.includes(k) && v !== null && typeof v !== "object");
+  const metaEl = document.getElementById("d-metadata");
+  if(extraMeta.length){
+    metaEl.style.display = "";
+    document.getElementById("d-meta-content").innerHTML = extraMeta.map(([k,v]) => `
+      <div class="col-sm-6">
+        <span class="text-uppercase fw-bold" style="font-size:.6rem; letter-spacing:.5px">${esc(k)}:</span>
+        <span>${esc(v)}</span>
+      </div>
+    `).join("");
+  } else {
+    metaEl.style.display = "none";
+  }
+
+  const iters = t.iterations || [];
+  document.getElementById("iter-tabs").innerHTML = iters.map((it,i) => {
+    const verdict = it.final_verdict || it.verdict;
+    const isErr = it.is_error || false;
+    const isPending = !verdict && !isErr;
+    const isPass = verdict === "pass";
+    const icon = isErr ? "⚠" : (isPending ? "…" : (isPass ? "✓" : "×"));
+    const cls = isErr ? "fail-tab" : (isPending ? "" : (isPass ? "pass-tab" : "fail-tab"));
+    return `<span class="iter-tab ${cls} ${i===0?"active":""}" onclick="showIteration(${i})">${icon} Iter ${it.iteration}</span>`;
+  }).join("");
+
+  showIteration(0);
+}
+
+function showIteration(idx){
+  document.querySelectorAll(".iter-tab").forEach((el,i)=>el.classList.toggle("active", i===idx));
+  const t = runData.tests[selectedTest];
+  const it = (t.iterations || [])[idx];
+  if (!it) return;
+
+  const verdict = it.final_verdict || it.verdict;
+  const isPass = verdict === "pass";
+  const isError = it.is_error || false;
+  const isPending = !verdict && !isError;
+  const targetModel = runData.meta?.target_model || "Unknown";
+  const judgeModels = (it.judge_votes || []).map(v => v.model).join(", ");
+
+  let verdictHtml = "";
+  if (isError) verdictHtml = `<span class="verdict-fail fs-5"><i class="bi bi-exclamation-triangle"></i> ERROR</span>`;
+  else if (isPending) verdictHtml = `<span class="fw-bold fs-5 text-primary">PENDING JUDGMENT</span>`;
+  else verdictHtml = `<span class="${isPass ? "verdict-pass" : "verdict-fail"} fs-5">${isPass ? "✓ PASS" : "× FAIL"}</span>`;
+
+  const voteLines = (it.judge_votes || []).map(v => `${v.model} (${v.model_type}) => ${v.verdict}${v.reason ? ` | ${v.reason}` : ""}`).join("\n");
+  const deterministicLines = (it.deterministic_findings || []).map(f => `${f.check} [${f.severity}] ${f.reason}`).join("\n");
+  const voteMeta = it.vote_policy
+    ? `Policy: ${it.vote_policy} | Agreement: ${Math.round((it.judge_agreement_rate || 0) * 100)}% | Disagreement: ${it.judge_disagreement ? "yes" : "no"}`
+    : "";
+
+  document.getElementById("iter-content").innerHTML = `
+    <div class="row g-3">
+      <div class="col-12 mb-2">
+        <div class="d-flex gap-3 align-items-center flex-wrap">
+          <div><span class="section-label d-block">Verdict</span>${verdictHtml}</div>
+          <div><span class="section-label d-block">Timestamp</span><span style="font-size:.82rem">${esc(it.timestamp)}</span></div>
+          ${it.reason ? `<div><span class="section-label d-block">Reason</span><span class="${isPending ? "text-primary" : "text-danger"}" style="font-size:.82rem">${esc(it.reason)}</span></div>` : ""}
+          ${voteMeta ? `<div><span class="section-label d-block">Vote Policy</span><span style="font-size:.82rem">${esc(voteMeta)}</span></div>` : ""}
+        </div>
+      </div>
+
+      <div class="col-12 mt-1">
+        <h6 class="text-uppercase fw-bold text-primary border-bottom pb-2 mb-1" style="font-size:.8rem">Target Model Interaction (${esc(targetModel)})</h6>
+      </div>
+
+      ${it.target_system_prompt ? `<div class="col-12"><div class="section-label">Target Model System Prompt</div><div class="code-block" style="color:#58a6ff">${esc(it.target_system_prompt)}</div></div>` : ""}
+      <div class="col-12"><div class="section-label">Target Model User Prompt (Attack Prompt)</div><div class="code-block">${esc(it.attack_prompt)}</div></div>
+      <div class="col-12"><div class="section-label">Target Model Response</div><div class="code-block" style="color:${isPending ? "#c9d1d9" : (isPass ? "#4ec9b0" : "#f48771")}">${esc(it.llm_response || "(empty)")}</div></div>
+
+      <div class="col-12 mt-4">
+        <h6 class="text-uppercase fw-bold text-success border-bottom pb-2 mb-1" style="font-size:.8rem">Judge Interaction (${esc(judgeModels || "Not judged yet")})</h6>
+      </div>
+
+      ${it.controller_system_prompt ? `<div class="col-12"><div class="section-label">Judge System Prompt</div><div class="code-block" style="color:#58a6ff">${esc(it.controller_system_prompt)}</div></div>` : ""}
+      ${it.controller_input ? `<div class="col-12"><div class="section-label">Judge Prompt</div><div class="code-block" style="color:#dcdcaa">${esc(it.controller_input)}</div></div>` : `<div class="col-12 text-muted" style="font-size:.8rem"><i>No judge prompt stored yet for this iteration.</i></div>`}
+      ${deterministicLines ? `<div class="col-12"><div class="section-label">Deterministic Findings</div><div class="code-block" style="color:#f48771">${esc(deterministicLines)}</div></div>` : ""}
+      ${voteLines ? `<div class="col-12"><div class="section-label">Judge Votes</div><div class="code-block" style="color:#ce9178">${esc(voteLines)}</div></div>` : ""}
+      ${it.controller_output ? `<div class="col-12"><div class="section-label">First Judge Raw Response</div><div class="code-block" style="color:#ce9178">${esc(it.controller_output)}</div></div>` : ""}
+    </div>
+  `;
+}
+
+load();
+</script>
+</body>
+</html>

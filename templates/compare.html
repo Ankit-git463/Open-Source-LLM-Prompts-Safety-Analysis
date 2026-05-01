@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>PromptMap — Compare Models</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css" />
+
+    <style>
+      :root {
+        --dark: #182033;
+        --red: #d64545;
+        --green: #2a9d5c;
+        --line: #e6e8ee;
+        --muted: #6b7280;
+        --shadow: 0 14px 40px rgba(24, 32, 51, 0.08);
+      }
+
+      body {
+        background:
+          radial-gradient(circle at top left, rgba(214, 69, 69, 0.08), transparent 24%),
+          linear-gradient(180deg, #f6f7fb 0%, #eef1f6 100%);
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+
+      .navbar {
+        background: var(--dark) !important;
+        border-bottom: 1px solid rgba(255,255,255,.08);
+        box-shadow: 0 10px 28px rgba(24, 32, 51, .18);
+      }
+
+      .navbar-brand {
+        color: #fff !important;
+        font-weight: 700;
+      }
+
+      .navbar-brand span {
+        color: var(--red);
+      }
+
+      .hero-strip {
+        background: linear-gradient(135deg, rgba(24,32,51,.98), rgba(37,48,74,.94));
+        color: #fff;
+        border-radius: 20px;
+        padding: 22px 24px;
+        box-shadow: var(--shadow);
+        margin-bottom: 18px;
+      }
+
+      .run-card {
+        border: 1px solid rgba(255,255,255,.7);
+        border-radius: 18px;
+        background: rgba(255,255,255,.94);
+        cursor: pointer;
+        transition: border-color 0.15s, transform .15s, box-shadow .15s;
+        position: relative;
+        box-shadow: var(--shadow);
+      }
+
+      .run-card.selected {
+        border-color: var(--red);
+        background: #fff5f4;
+      }
+      .run-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 36px rgba(24, 32, 51, 0.12);
+      }
+
+      .del-btn {
+        position: absolute;
+        top: 5px;
+        right: 6px;
+        background: none;
+        border: none;
+        color: #ccc;
+        font-size: 0.8rem;
+      }
+
+      .rate-big {
+        font-size: 1.6rem;
+        font-weight: 700;
+      }
+
+      .chart-card {
+        background: rgba(255,255,255,.94);
+        border-radius: 18px;
+        border: 1px solid rgba(255,255,255,.7);
+        box-shadow: var(--shadow);
+      }
+
+      .section-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--muted);
+        margin-bottom: 0.5rem;
+      }
+
+      .hm-table {
+        border-collapse: separate;
+        border-spacing: 3px;
+        font-size: 0.75rem;
+      }
+
+      .hm-table td {
+        min-width: 60px;
+        text-align: center;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+
+      .c-pass {
+        background: #d1fadf;
+      }
+      .c-fail {
+        background: #ffe0e0;
+      }
+      .c-na {
+        background: #f2f2f2;
+      }
+
+      #compare-out {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Navigation Bar  -->
+    <nav class="navbar navbar-dark mb-0">
+      <div class="container-fluid px-4">
+        <span class="navbar-brand"
+          ><i class="bi bi-shield-shaded me-2"></i>Prompt<span>Map</span></span
+        >
+        <div class="d-flex gap-3 align-items-center">
+          <a
+            href="/"
+            style="
+              color: rgba(255, 255, 255, 0.7);
+              font-size: 0.85rem;
+              text-decoration: none;
+            "
+            ><i class="bi bi-play-fill me-1"></i>Run Tests</a
+          >
+          <a
+            href="/history"
+            style="
+              color: rgba(255, 255, 255, 0.7);
+              font-size: 0.85rem;
+              text-decoration: none;
+            "
+            ><i class="bi bi-clock-history me-1"></i>History</a
+          >
+          <a
+            href="/compare"
+            style="
+              color: #fff;
+              font-size: 0.85rem;
+              text-decoration: none;
+              font-weight: 600;
+            "
+            ><i class="bi bi-bar-chart-line me-1"></i>Compare</a
+          >
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container-fluid px-4 py-3">
+      <div class="hero-strip">
+        <div class="small text-uppercase fw-semibold mb-2" style="letter-spacing:1.1px;color:rgba(255,255,255,.68)">Comparison View</div>
+        <h5 class="fw-bold mb-1">Compare only judged runs on the same test surface.</h5>
+        <p class="mb-0" style="color:rgba(255,255,255,.72)">Select completed runs to see overall pass rate, pass/fail totals, and a per-test heatmap side by side.</p>
+      </div>
+      <div class="d-flex justify-content-between mb-3">
+        <div>
+          <h5 class="fw-bold">Model Comparison</h5>
+          <small class="text-muted"> Select two runs then click compare </small>
+        </div>
+
+        <button id="compare-btn" class="btn btn-danger btn-sm" onclick="runComparison()" disabled >
+          Compare Selected (<span id="sel-count">0</span>)
+        </button>
+      </div>
+
+      <div  id="error-box"  class="alert alert-danger"  style="display: none" > </div>
+
+      <div id="runs-grid" class="row g-2 mb-4">
+        <div class="col-12 text-center text-muted" id="empty-msg">
+          No runs yet
+        </div>
+      </div>
+
+      <div id="compare-out">
+        <!-- Test Map -->
+        <div class="chart-card p-3 mb-4">
+          <div class="section-label">Test Heatmap</div>
+          <input id="hm-filter" class="form-control form-control-sm mb-2" placeholder="Filter tests" oninput="filterHeatmap()" />
+          <table class="hm-table w-100">
+            <thead id="hm-head"></thead>
+            <tbody id="hm-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Model LeaderBoard -->
+        <div class="chart-card p-3 mb-3">
+          <div class="section-label">Model Leaderboard</div>
+
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Model</th>
+                <th>Pass Rate</th>
+                <th>Passed</th>
+                <th>Failed</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+
+            <tbody id="leaderboard"></tbody>
+          </table>
+        </div>
+        
+        <!-- Overall Pass Rates and Pass vs Fails  -->
+        <div class="row g-3 mb-3">
+          <div class="col-lg-6">
+            <div class="chart-card p-3">
+              <div class="section-label">Overall Pass Rate</div>
+
+              <div id="wrap-overall">
+                <canvas id="c-overall"></canvas>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-6">
+            <div class="chart-card p-3">
+              <div class="section-label">Pass vs Fail</div>
+
+              <div id="wrap-stacked">
+                <canvas id="c-stacked"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+    <script>
+      const COLORS = ["#e63946", "#2a9d5c", "#457b9d", "#f4a261", "#9b5de5"];
+
+      let selected = new Set();
+      let lastData = null;
+
+      function esc(s) {
+        return String(s || "")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function showError(msg) {
+        const b = document.getElementById("error-box");
+        b.textContent = msg;
+        b.style.display = "";
+      }
+
+      function freshCanvas(wrapper, id) {
+        const w = document.getElementById(wrapper);
+        const old = document.getElementById(id);
+
+        if (old) old.remove();
+
+        const c = document.createElement("canvas");
+        c.id = id;
+        w.appendChild(c);
+
+        return c.getContext("2d");
+      }
+
+      async function loadRuns() {
+        try {
+          const res = await fetch("/api/runs");
+          let data = await res.json();
+
+          const runs = (data.runs || data).filter(r => r.status === "judged");
+
+          const grid = document.getElementById("runs-grid");
+          const empty = document.getElementById("empty-msg");
+
+          if (!runs.length) {
+            empty.style.display = "";
+            return;
+          }
+
+          empty.style.display = "none";
+
+          grid.innerHTML = runs
+            .map(
+              (r) => `
+                      <div class="col-md-3">
+                        <div class="run-card p-3" id="card-${r.job_id}" onclick="toggleCard('${r.job_id}')" >
+                          <div class="fw-bold"> ${esc(r.model)} </div>
+                          <div class="text-muted small">${r.timestamp.replace("T", " ")}</div>
+                          <div class="rate-big">${r.pass_rate}%</div>
+                          <div class="small">${r.passed}/${r.total} passed</div>
+                        </div>
+                      </div>
+                      `
+            )
+            .join("");
+        } catch (e) {
+          showError("Failed loading runs");
+        }
+      }
+
+      function toggleCard(id) {
+        if (selected.has(id)) {
+          selected.delete(id);
+          document.getElementById("card-" + id).classList.remove("selected");
+        } else {
+          selected.add(id);
+          document.getElementById("card-" + id).classList.add("selected");
+        }
+
+        document.getElementById("sel-count").textContent = selected.size;
+        document.getElementById("compare-btn").disabled = selected.size < 2;
+      }
+
+      async function runComparison() {
+        const ids = [...selected].join(",");
+
+        console.log("COMPARE IDS:", ids);
+
+        try {
+          const res = await fetch(`/api/compare?ids=${ids}`);
+          const data = await res.json();
+
+          console.log("API RESPONSE:", data);
+
+          const runs = data.runs || data;
+          const tests = data.all_tests || [];
+
+          if (!runs.length) {
+            showError("No comparison results");
+            return;
+          }
+
+          document.getElementById("compare-out").style.display = "block";
+
+          renderLeaderboard(runs);
+          renderOverall(runs);
+          renderStacked(runs);
+          renderHeatmap(runs, tests);
+        } catch (e) {
+          showError("Comparison failed");
+        }
+      }
+
+      function renderLeaderboard(runs) {
+        const sorted = [...runs].sort((a, b) => b.pass_rate - a.pass_rate);
+
+        document.getElementById("leaderboard").innerHTML = sorted
+          .map(
+            (r, i) => `
+                      <tr>
+                        <td>#${i + 1}</td>
+                        <td>${esc(r.model)}</td>
+                        <td>${r.pass_rate}%</td>
+                        <td>${r.passed}</td>
+                        <td>${r.failed}</td>
+                        <td>${r.total}</td>
+                      </tr>
+                      `
+          )
+          .join("");
+      }
+
+      function renderOverall(runs) {
+        const ctx = freshCanvas("wrap-overall", "c-overall");
+
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: runs.map((r) => r.model),
+            datasets: [
+              {
+                data: runs.map((r) => r.pass_rate),
+                backgroundColor: runs.map((_, i) => COLORS[i % COLORS.length]),
+              },
+            ],
+          },
+          options: {
+            indexAxis: "y",
+            scales: { x: { min: 0, max: 100 } },
+          },
+        });
+      }
+
+      function renderStacked(runs) {
+        const ctx = freshCanvas("wrap-stacked", "c-stacked");
+
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: runs.map((r) => r.model),
+            datasets: [
+              {
+                label: "Passed",
+                data: runs.map((r) => r.passed),
+                backgroundColor: "#2a9d5c",
+              },
+              {
+                label: "Failed",
+                data: runs.map((r) => r.failed),
+                backgroundColor: "#e63946",
+              },
+            ],
+          },
+          options: {
+            scales: {
+              x: { stacked: true },
+              y: { stacked: true },
+            },
+          },
+        });
+      }
+
+      function renderHeatmap(runs, tests) {
+        if (!tests.length) {
+          document.getElementById("hm-body").innerHTML =
+            "<tr><td>No test data</td></tr>";
+          return;
+        }
+
+        document.getElementById("hm-head").innerHTML = `<tr>
+              <th>Test</th>
+              ${runs.map((r) => `<th>${esc(r.model)}</th>`).join("")}
+              </tr>`;
+
+        document.getElementById("hm-body").innerHTML = tests
+          .map(
+            (t) => `
+
+                <tr data-test="${t}">
+
+                <td>${t}</td>
+
+                ${runs
+                  .map((r) => {
+                    const v = r.per_test?.[t];
+
+                    if (v === undefined)
+                      return `<td class="c-fail" title="Missing from run">MISSING</td>`;
+                    if (v) return `<td class="c-pass">PASS</td>`;
+                    return `<td class="c-fail">FAIL</td>`;
+                  })
+                  .join("")}
+
+                </tr>
+
+                `
+          )
+          .join("");
+      }
+
+      function filterHeatmap() {
+        const q = document.getElementById("hm-filter").value.toLowerCase();
+
+        document.querySelectorAll("#hm-body tr").forEach((row) => {
+          row.style.display = row.dataset.test?.toLowerCase().includes(q)
+            ? ""
+            : "none";
+        });
+      }
+
+      loadRuns();
+    </script>
+  </body>
+</html>
