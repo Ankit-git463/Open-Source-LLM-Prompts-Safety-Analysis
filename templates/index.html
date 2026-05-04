@@ -206,7 +206,7 @@
       <hr class="my-2" />
 
       <div class="section-title">System Prompts File</div>
-      <input id="prompts-path" type="text" class="form-control form-control-sm mb-2" value="system-prompts.txt" />
+      <input id="prompts-path" type="text" class="form-control form-control-sm mb-2" value="SystemPrompts/default-system-prompt.txt" />
 
       <div class="row g-2 mb-2">
         <div class="col-6">
@@ -221,19 +221,19 @@
 
       <div class="section-title">Rule Types</div>
       <div class="mb-2" id="rule-type-checks">
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="jailbreak" id="rt-jail" checked><label class="form-check-label small" for="rt-jail">Jailbreak</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="harmful" id="rt-harm" checked><label class="form-check-label small" for="rt-harm">Harmful</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="hate" id="rt-hate" checked><label class="form-check-label small" for="rt-hate">Hate</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="distraction" id="rt-dist" checked><label class="form-check-label small" for="rt-dist">Distraction</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="social_bias" id="rt-bias" checked><label class="form-check-label small" for="rt-bias">Social Bias</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="prompt_stealing" id="rt-steal" checked><label class="form-check-label small" for="rt-steal">Prompt Stealing</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="jailbreak" id="rt-jail"><label class="form-check-label small" for="rt-jail">Jailbreak</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="harmful" id="rt-harm"><label class="form-check-label small" for="rt-harm">Harmful</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="hate" id="rt-hate"><label class="form-check-label small" for="rt-hate">Hate</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="distraction" id="rt-dist"><label class="form-check-label small" for="rt-dist">Distraction</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="social_bias" id="rt-bias"><label class="form-check-label small" for="rt-bias">Social Bias</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="prompt_stealing" id="rt-steal"><label class="form-check-label small" for="rt-steal">Prompt Stealing</label></div>
       </div>
 
       <div class="section-title">Severity</div>
       <div class="mb-2">
-        <div class="form-check form-check-inline"><input class="form-check-input rsev" type="checkbox" value="low" id="sv-low" checked><label class="form-check-label small" for="sv-low">Low</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rsev" type="checkbox" value="medium" id="sv-med" checked><label class="form-check-label small" for="sv-med">Medium</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rsev" type="checkbox" value="high" id="sv-high" checked><label class="form-check-label small" for="sv-high">High</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rsev" type="checkbox" value="low" id="sv-low" ><label class="form-check-label small" for="sv-low">Low</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rsev" type="checkbox" value="medium" id="sv-med" ><label class="form-check-label small" for="sv-med">Medium</label></div>
+        <div class="form-check form-check-inline"><input class="form-check-input rsev" type="checkbox" value="high" id="sv-high" ><label class="form-check-label small" for="sv-high">High</label></div>
       </div>
 
       <div class="section-title">Specific Rules <small class="text-muted">(comma-separated, optional)</small></div>
@@ -242,9 +242,8 @@
       <button id="run-btn" class="btn btn-danger w-100 mt-2" onclick="runTests()">
         <i class="bi bi-play-fill me-1"></i> Run
       </button>
-      <button id="judge-btn" class="btn btn-outline-dark w-100 mt-2" onclick="judgeCurrentRun()" disabled>
-        <i class="bi bi-check2-square me-1"></i> Judge Latest Run
-      </button>
+      
+
     </div>
   </div>
 
@@ -504,39 +503,6 @@ async function runTests() {
   localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: currentJob, run_id: latestRunId, mode: "generate" }));
   localStorage.setItem(LATEST_RUN_KEY, latestRunId);
 
-  pollJob(currentJob, { enableJudgeAfterDone: true });
-}
-
-async function judgeCurrentRun() {
-  const judges = getJudgePayload();
-  if (!latestRunId) { alert("Generate responses first."); return; }
-  if (!judges.length) { alert("Add at least one judge model."); return; }
-
-  setLog(`Starting judging for run ${latestRunId}...\n`);
-  setStatus("running");
-  document.getElementById("run-btn").disabled = true;
-  document.getElementById("judge-btn").disabled = true;
-
-  const res = await fetch("/api/judge", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      run_id: latestRunId,
-      judges,
-      google_api_key: document.getElementById("google-key").value.trim() || null,
-      ollama_url: document.getElementById("ollama-url").value.trim(),
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    setStatus("error");
-    setLog(data.error || "Failed to start judging.");
-    document.getElementById("run-btn").disabled = false;
-    document.getElementById("judge-btn").disabled = false;
-    return;
-  }
-  currentJob = data.job_id;
-  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: currentJob, run_id: latestRunId, mode: "judge" }));
   pollJob(currentJob, { enableJudgeAfterDone: true });
 }
 

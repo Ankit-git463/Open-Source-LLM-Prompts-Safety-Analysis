@@ -1,0 +1,133 @@
+\chapter{System Requirements and Design}
+
+\section{Functional Requirements}
+PromptMap was designed to satisfy the following functional requirements:
+
+\begin{itemize}
+\item The user must be able to select a target model provider and model name.
+\item The system must support Ollama local models and Google Gemini models.
+\item The user must be able to specify a system prompt file.
+\item The user must be able to filter tests by rule type, severity, and rule name.
+\item The system must execute each selected rule for a configurable number of iterations.
+\item The system must store target responses before judging.
+\item The user must be able to judge saved runs using one or more judge models.
+\item The system must aggregate judge votes into final pass/fail verdicts.
+\item The system must persist JSON and CSV result files.
+\item The user must be able to view history, inspect run details, download results, delete runs, and compare judged runs.
+\end{itemize}
+
+\section{Non-Functional Requirements}
+The non-functional requirements include reproducibility, extensibility, usability, provider flexibility, and simplicity. Reproducibility is achieved by storing prompts, rules, responses, configuration, timestamps, and verdicts. Extensibility is achieved through YAML rules. Usability is provided through a web interface. Provider flexibility is achieved by abstracting model calls. Simplicity is maintained by using local file-based storage.
+
+\section{System Architecture}
+PromptMap follows a layered architecture. The browser UI communicates with Flask routes and APIs in \texttt{app.py}. The Flask layer starts background jobs and delegates core work to \texttt{engine.py}. The engine loads rules and system prompts, calls model providers, performs deterministic checks, evaluates results, aggregates votes, and saves output files.
+
+\begin{figure}[h]
+\centering
+\begin{tabular}{c}
+\fbox{\parbox{0.72\textwidth}{\centering Browser UI: configuration, logs, history, details, comparison}}\\[0.15in]
+$\downarrow$\\[0.05in]
+\fbox{\parbox{0.72\textwidth}{\centering Flask API: routes, background jobs, run index, downloads}}\\[0.15in]
+$\downarrow$\\[0.05in]
+\fbox{\parbox{0.72\textwidth}{\centering Testing engine: rules, model calls, checks, judging, aggregation}}\\[0.15in]
+$\downarrow$\\[0.05in]
+\fbox{\parbox{0.72\textwidth}{\centering File storage: YAML rules, system prompts, JSON/CSV results}}
+\end{tabular}
+\caption{Layered architecture of PromptMap}
+\end{figure}
+
+\section{Major Components}
+\subsection{Web Application Layer}
+The web layer is implemented using Flask. It serves pages for configuring and running tests, viewing saved runs, inspecting full run details, and comparing judged runs. It also exposes APIs for model discovery, job polling, downloads, deletion, and comparison.
+
+\subsection{Engine Layer}
+The engine layer contains the core logic for provider initialization, rule loading, system prompt loading, target model calls, deterministic checks, judge evaluation, vote aggregation, summary recomputation, and export. Important functions include \texttt{generate\_responses()}, \texttt{judge\_saved\_run()}, \texttt{evaluate\_result()}, and \texttt{aggregate\_judge\_votes()}.
+
+\subsection{Prompt and Rule Libraries}
+\texttt{Prompts.py} stores the default controller system prompt and category-specific judge prompts. The \texttt{rules/} directory stores YAML test cases. Each rule contains a unique name, type, severity, adversarial prompt, pass conditions, and fail conditions.
+
+\subsection{Result Storage}
+PromptMap uses local file storage. Each run creates \texttt{results/<run\_id>.json} and \texttt{results/<run\_id>.csv}. The file \texttt{results/runs\_index.json} stores metadata used by the history and comparison pages.
+
+\section{Workflow Design}
+The system has two main workflows: response generation and judging. In the generation workflow, the user submits a configuration, the Flask application creates a background job, and the engine sends selected adversarial prompts to the target model. The raw responses are saved. In the judging workflow, saved responses are evaluated using deterministic checks and one or more judge models.
+
+\begin{figure}[h]
+\centering
+\begin{tabular}{c}
+\fbox{Submit run configuration}\\
+$\downarrow$\\
+\fbox{Load system prompt and selected YAML rules}\\
+$\downarrow$\\
+\fbox{Call target model for each rule iteration}\\
+$\downarrow$\\
+\fbox{Save raw responses}\\
+$\downarrow$\\
+\fbox{Judge saved responses and aggregate votes}\\
+$\downarrow$\\
+\fbox{Export JSON/CSV and update history}
+\end{tabular}
+\caption{PromptMap execution workflow}
+\end{figure}
+
+\section{Generation Workflow}
+The generation workflow begins when the user submits a run configuration. The configuration includes the target model type, target model name, system prompt path, rules directory, selected rule filters, iteration count, Ollama URL, and optional Google API key. The Flask application creates a short run ID and starts a background thread. The thread loads rules, applies filters, initializes the target client, and calls the target model for each selected rule.
+
+Each target response is stored even if no judge model has been selected. This is important because response generation and evaluation can be separated in time. It also protects evidence from being lost if the user wants to inspect raw target behaviour manually.
+
+\section{Judging Workflow}
+The judging workflow starts from a saved run. The user selects one or more judge models. The engine loads the saved JSON file, initializes judge clients, and evaluates each stored response. The result of each judge is stored as a vote. The aggregate policy then computes the final verdict. After judging, the JSON and CSV files are updated, and the run index is recomputed.
+
+This two-stage design has an advantage over a single combined workflow. If the user wants to change judge models, the target model does not need to be called again. This reduces cost and avoids changes caused by non-deterministic target responses.
+
+\section{Data Model}
+The saved JSON output has two major parts: metadata and tests. Metadata stores the target model, model type, timestamps, status, total tests, passed tests, failed tests, pass rate, judge models, and configuration. The tests section stores one entry for each rule. Each test entry stores original rule information, aggregate verdict, pass rate, and iteration records.
+
+Each iteration record stores the iteration number, timestamp, system prompt, attack prompt, target response, error flag, deterministic findings, judge votes, controller input, controller output, final verdict, reason, and vote policy. This detailed structure supports debugging, audit, and future analysis.
+
+\section{Configuration Design}
+PromptMap stores the configuration with every run. This includes model names, provider types, prompt path, rule filters, severity filters, iteration count, and judge list. A pass rate without configuration is not meaningful because the result depends on the exact prompt, model, and rules used. By storing configuration, PromptMap makes the experiment easier to reproduce and interpret.
+
+\section{Rule Selection Design}
+The rule library is large enough that users may not always want to run all tests. If 564 rules are run with three iterations, generation requires 1692 target model calls before judging. Therefore, PromptMap supports filtering by rule type, severity, and rule name. Broad testing can be used for final evaluation, while narrow testing can be used for debugging a specific failure.
+
+\section{Background Job Design}
+LLM calls can be slow, especially with local models. The Flask application therefore uses background threads for long-running generation and judging tasks. The browser polls the job endpoint to get progress logs and final results. Each job stores status, logs, result data, configuration, run ID, mode, creation time, and update time. This keeps the interface responsive.
+
+\section{Vote Aggregation}
+PromptMap supports multiple judge models. Each judge returns a pass or fail vote. For high-risk categories such as harmful, jailbreak, prompt stealing, and judge injection, any fail vote causes the final result to fail. For other categories, majority voting is used and ties are treated as failures. This design is conservative, which is appropriate for security testing.
+
+\section{Error Handling Design}
+Model calls may fail because a provider is unavailable, an API key is missing, a model name is wrong, or the local Ollama server is not running. PromptMap records these errors in the result data. During evaluation, an error is treated as a failed test because the model did not successfully handle the adversarial prompt. This is a conservative testing choice.
+
+\section{API Design}
+The main API endpoints are shown in Table \ref{api_table}.
+
+\begin{table}[h]
+\centering
+\caption{Important PromptMap API endpoints}
+\label{api_table}
+\begin{tabular}{lll}
+\toprule
+Endpoint & Method & Purpose\\
+\midrule
+\texttt{/api/ollama-models} & GET & List local Ollama models\\
+\texttt{/api/run} & POST & Start target response generation\\
+\texttt{/api/judge} & POST & Judge a saved run\\
+\texttt{/api/job/<job\_id>} & GET & Poll job status and logs\\
+\texttt{/api/run-detail/<job\_id>} & GET & Retrieve saved run data\\
+\texttt{/api/download/<job\_id>/<fmt>} & GET & Download JSON or CSV\\
+\texttt{/api/runs} & GET & List saved runs\\
+\texttt{/api/compare} & GET & Compare judged runs\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Design Trade-Offs}
+The system deliberately uses a simple local architecture. File-based storage avoids database setup and makes results easy to inspect. Flask background threads are sufficient for the current project scale. YAML rules are readable and version-control friendly. The trade-off is that a production deployment would need authentication, persistent job queues, stronger concurrency handling, and database-backed storage.
+
+\section{Technology Stack}
+The project uses Python, Flask, Bootstrap, Bootstrap Icons, PyYAML, Requests, the Ollama Python client, the Google GenAI SDK, \texttt{tiktoken}, JSON, and CSV. Python was chosen because of its strong ecosystem for AI tooling and web development. Flask was chosen because it is lightweight and easy to integrate with a custom engine. YAML was chosen because it makes rules human-readable and easy to edit.
+
+\section{Conclusion}
+This chapter presented the requirements and design of PromptMap. The architecture separates presentation, API, engine, and file-storage responsibilities. The next chapter explains how these design decisions were implemented and evaluated.

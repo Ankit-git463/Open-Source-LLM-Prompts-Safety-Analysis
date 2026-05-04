@@ -1,0 +1,84 @@
+\documentclass {CSEThesis}
+% Standard packages
+\usepackage{amsmath}        % Extra math definitions
+\usepackage{graphics}       % PostScript figures
+\usepackage{setspace}       % 1.5 spacing
+%\usepackage{psfig,epsfig}
+\usepackage{multicol}
+\usepackage{subfigure}
+\usepackage{epsfig,color}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+% Custom packages
+%\usepackage[first]{datestamp}   % Datestamp on first page of each chapter
+
+
+\usepackage{color}
+%===== page layout
+% Define the side margins for a right-side page
+%\insidemargin = 1.3in \outsidemargin = 0.9in
+% Above margin is space above the header
+% Below margin is space below footer
+%\abovemargin = 1.5in \belowmargin = 0.05in
+
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  columns=fullflexible
+}
+
+\btptitle = {PromptMap: A Web-Based Framework for Automated Prompt Injection and LLM Security Evaluation} % { and } are needed around your name
+\name = {Student Name}          % and other feilds. don't remove.
+\rollno = {03010104} \email = {id.iitp.ac.in} \guide = {Your guide name}
+
+
+\begin{document}
+
+\include{title}
+\cleardoublepage
+\include{certificate}
+\cleardoublepage
+\include{acknowledgement}
+\cleardoublepage
+\include{abstract}
+\cleardoublepage
+\tableofcontents
+\cleardoublepage
+\addcontentsline{toc}{chapter}{List of Figures}
+\listoffigures
+\cleardoublepage
+\addcontentsline{toc}{chapter}{List of Tables}
+\listoftables
+\cleardoublepage
+\pagenumbering{arabic}
+\def\headrulehook{\color{black}}      % Color the header rule
+
+%========== Chapters
+\typeout{}
+\include{chapter1}
+\cleardoublepage
+\typeout{}
+\include{chapter2}
+\cleardoublepage
+\typeout{}
+\include{chapter3}
+\cleardoublepage
+\typeout{}
+\include{chapter4}
+\cleardoublepage
+\typeout{}
+\include{futurework}
+\typeout{}
+
+\nocite{*}
+\bibliography{btp}
+\bibliographystyle{alpha}
+\end{document}

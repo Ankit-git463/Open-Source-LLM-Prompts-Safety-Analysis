@@ -13,8 +13,13 @@ from engine import (
 )
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("promptmap")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+if not logger.handlers:
+    terminal_handler = logging.StreamHandler(sys.stdout)
+    terminal_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(terminal_handler)
 
 JOBS: dict = {}
 JOBS_LOCK = threading.Lock()
@@ -49,6 +54,8 @@ def append_job_log(job_id: str, msg: str):
             mode = "job"
             run_id = job_id
     logger.info("[%s:%s/%s] %s", mode, job_id, run_id, line)
+    for handler in logger.handlers:
+        handler.flush()
 
 
 def set_job_status(job_id: str, status: str, result: dict = None):
@@ -108,8 +115,15 @@ def build_run_meta(job_id: str, data: dict, cfg: dict = None) -> dict:
         "type_stats": meta.get("type_stats", {}),
         "sev_stats": meta.get("sev_stats", {}),
         "judge_models": meta.get("judge_models", []),
+        "total_planned_tests": meta.get("total_planned_tests", meta.get("total_tests", 0)),
         "config": cfg or {},
     }
+
+
+def persist_run_outputs(run_id: str, data: dict, cfg: dict = None):
+    save_results_json(str(RESULTS_DIR / f"{run_id}.json"), data)
+    save_results_csv(str(RESULTS_DIR / f"{run_id}.csv"), data)
+    add_run(build_run_meta(run_id, data, cfg))
 
 
 # ─── Pages ────────────────────────────────────────────────────────────────────
@@ -154,28 +168,29 @@ def api_run():
 
     def worker():
         def log(msg): append_job_log(run_id, msg)
+        def checkpoint(data):
+            persist_run_outputs(run_id, data, cfg)
 
         try:
             data = generate_responses(
                 target_model=cfg["target_model"],
                 target_model_type=cfg["target_model_type"],
-                system_prompts_path=cfg.get("prompts_path", "system-prompts.txt"),
+                system_prompts_path=cfg.get("prompts_path", "SystemPrompts/default-system-prompt.txt"),
                 iterations=int(cfg.get("iterations", 3)),
                 severities=cfg.get("severities") or None,
                 rule_names=cfg.get("rule_names") or None,
                 rule_types=cfg.get("rule_types") or None,
                 ollama_url=cfg.get("ollama_url", "http://localhost:11434"),
                 google_api_key=cfg.get("google_api_key") or None,
-                output_path=None,
+                output_path=str(RESULTS_DIR / f"{run_id}.json"),
                 rules_dir=cfg.get("rules_dir", "rules"),
                 log_fn=log,
+                checkpoint_fn=checkpoint,
             )
 
             # Persist files
             append_job_log(run_id, "Persisting target responses...")
-            save_results_json(str(RESULTS_DIR / f"{run_id}.json"), data)
-            save_results_csv(str(RESULTS_DIR / f"{run_id}.csv"), data)
-            add_run(build_run_meta(run_id, data, cfg))
+            persist_run_outputs(run_id, data, cfg)
 
             if judges:
                 append_job_log(run_id, "Target responses saved. Starting judge phase...")
@@ -187,11 +202,9 @@ def api_run():
                     log_fn=log,
                 )
                 append_job_log(run_id, "Persisting judged JSON and CSV outputs...")
-                save_results_json(str(RESULTS_DIR / f"{run_id}.json"), data)
-                save_results_csv(str(RESULTS_DIR / f"{run_id}.csv"), data)
                 judged_cfg = dict(cfg)
                 judged_cfg["judges"] = judges
-                add_run(build_run_meta(run_id, data, judged_cfg))
+                persist_run_outputs(run_id, data, judged_cfg)
                 append_job_log(run_id, f"Run {run_id} complete. Responses and judgments saved.")
             else:
                 append_job_log(run_id, f"Run {run_id} complete. Responses saved and ready for later judging.")
@@ -200,6 +213,11 @@ def api_run():
         except Exception as e:
             append_job_log(run_id, f"Fatal error: {str(e)}")
             append_job_log(run_id, traceback.format_exc())
+            saved = load_run(run_id)
+            if saved:
+                saved.setdefault("meta", {})["status"] = "interrupted"
+                saved["meta"]["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                persist_run_outputs(run_id, saved, cfg)
             set_job_status(run_id, "error")
 
     threading.Thread(target=worker, daemon=True).start()
@@ -251,6 +269,100 @@ def api_judge():
         except Exception as e:
             append_job_log(task_id, f"Fatal error: {str(e)}")
             append_job_log(task_id, traceback.format_exc())
+            set_job_status(task_id, "error")
+
+    threading.Thread(target=worker, daemon=True).start()
+    return jsonify({"job_id": task_id, "run_id": run_id})
+
+
+@app.route("/api/runs/resume/<run_id>", methods=["POST"])
+def api_resume_run(run_id):
+    saved = load_run(run_id)
+    if not saved:
+        return jsonify({"error": f"Run not found: {run_id}"}), 404
+
+    index = {r["job_id"]: r for r in load_runs_index()}
+    stored_cfg = dict(index.get(run_id, {}).get("config", {}))
+    request_cfg = request.json or {}
+    cfg = {**stored_cfg, **{k: v for k, v in request_cfg.items() if v is not None}}
+
+    meta = saved.get("meta", {})
+    cfg.setdefault("target_model", meta.get("target_model"))
+    cfg.setdefault("target_model_type", meta.get("target_model_type"))
+    cfg.setdefault("prompts_path", meta.get("system_prompts_path", "SystemPrompts/default-system-prompt.txt"))
+    cfg.setdefault("iterations", meta.get("iterations_per_test", 3))
+    cfg.setdefault("rules_dir", "rules")
+    cfg.setdefault("rule_types", meta.get("rule_types_filter"))
+    cfg.setdefault("severities", meta.get("severities_filter"))
+    cfg.setdefault("rule_names", meta.get("rule_names_filter"))
+    cfg.setdefault("ollama_url", "http://localhost:11434")
+
+    if not cfg.get("target_model") or not cfg.get("target_model_type"):
+        return jsonify({"error": "Saved run is missing target model configuration."}), 400
+
+    if meta.get("status") == "judged":
+        return jsonify({"error": "This run is already judged. Use Run Again to create a fresh run."}), 400
+
+    task_id = str(uuid.uuid4())[:8]
+    create_job(task_id, cfg, run_id, "resume")
+    append_job_log(task_id, f"Queued resume for saved run {run_id}.")
+    append_job_log(task_id, f"Target model: {cfg.get('target_model')} ({cfg.get('target_model_type')})")
+
+    def worker():
+        def log(msg): append_job_log(task_id, msg)
+        def checkpoint(data):
+            persist_run_outputs(run_id, data, cfg)
+
+        try:
+            current = load_run(run_id)
+            if not current:
+                raise FileNotFoundError(f"Run not found: {run_id}")
+
+            data = generate_responses(
+                target_model=cfg["target_model"],
+                target_model_type=cfg["target_model_type"],
+                system_prompts_path=cfg.get("prompts_path", "SystemPrompts/default-system-prompt.txt"),
+                iterations=int(cfg.get("iterations", 3)),
+                severities=cfg.get("severities") or None,
+                rule_names=cfg.get("rule_names") or None,
+                rule_types=cfg.get("rule_types") or None,
+                ollama_url=cfg.get("ollama_url", "http://localhost:11434"),
+                google_api_key=cfg.get("google_api_key") or None,
+                output_path=str(RESULTS_DIR / f"{run_id}.json"),
+                rules_dir=cfg.get("rules_dir", "rules"),
+                log_fn=log,
+                existing_data=current,
+                checkpoint_fn=checkpoint,
+                resume=True,
+            )
+
+            append_job_log(task_id, "Persisting resumed target responses...")
+            persist_run_outputs(run_id, data, cfg)
+
+            judges = cfg.get("judges") or []
+            if judges and data.get("meta", {}).get("status") != "interrupted":
+                append_job_log(task_id, "Resume complete. Starting judge phase...")
+                data = judge_saved_run(
+                    data,
+                    judges=judges,
+                    ollama_url=cfg.get("ollama_url", "http://localhost:11434"),
+                    google_api_key=cfg.get("google_api_key") or None,
+                    log_fn=log,
+                )
+                judged_cfg = dict(cfg)
+                judged_cfg["judges"] = judges
+                persist_run_outputs(run_id, data, judged_cfg)
+
+            append_job_log(task_id, f"Resume complete for run {run_id}.")
+            set_job_status(task_id, "done", data)
+        except Exception as e:
+            append_job_log(task_id, f"Fatal error: {str(e)}")
+            append_job_log(task_id, traceback.format_exc())
+            current = load_run(run_id)
+            if current:
+                current.setdefault("meta", {})["status"] = "interrupted"
+                current["meta"]["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                persist_run_outputs(run_id, current, cfg)
             set_job_status(task_id, "error")
 
     threading.Thread(target=worker, daemon=True).start()

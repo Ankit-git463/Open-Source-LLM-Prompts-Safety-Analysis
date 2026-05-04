@@ -1,0 +1,12 @@
+\newpage
+\chapter*{\centering Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+\textit{\quad 
+Large language model applications rely heavily on system prompts to define role, behaviour, task boundaries, and safety constraints. However, these prompts are not hard security boundaries. A malicious user can attempt prompt injection, jailbreaks, prompt stealing, harmful instruction requests, hate generation, social bias elicitation, distraction attacks, or even manipulation of the evaluation layer itself. Manual testing of such behaviour is slow, inconsistent, and difficult to repeat across prompt versions and model choices.
+
+This project presents PromptMap, a web-based framework for automated security evaluation of LLM system prompts. The system is implemented as a Flask application backed by a Python testing engine. It allows a user to select a target model, load a system prompt, execute adversarial YAML rules, store raw model responses, judge saved responses using one or more evaluator models, and compare results across runs. PromptMap supports local Ollama models and Google Gemini models, separates response generation from judging, and stores detailed JSON and CSV evidence for every experiment.
+
+The framework includes a reusable rule corpus covering distraction, harmful requests, hate, jailbreak, prompt stealing, social bias, and judge injection. It combines LLM-based judging with deterministic checks such as refusal-signal detection, prompt-leak detection through n-gram and sentence overlap, judge-injection pattern detection, and unsafe actionable-format detection. For high-risk categories, it uses conservative multi-judge aggregation where any failure vote can mark the test as failed.
+
+The result is a practical local tool for developers and researchers who need repeatable prompt red-teaming. PromptMap does not claim to prove that a model is completely safe; rather, it provides structured evidence about where a prompt and model combination resists or fails adversarial inputs.
+}

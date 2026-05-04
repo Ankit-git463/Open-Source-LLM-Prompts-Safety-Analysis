@@ -1,0 +1,59 @@
+\chapter{Introduction}
+\pagenumbering{arabic}\hspace{3mm}
+
+\section{Background}
+Large language models (LLMs) are increasingly used as the language and reasoning layer inside modern applications. They answer customer queries, summarize documents, operate educational tutors, assist with recruitment, provide technical support, and help users complete many domain-specific workflows. In these systems, the system prompt is a central design component. It defines the model's identity, role, domain, restrictions, private instructions, and safety expectations.
+
+Unlike conventional software rules, however, system prompts are written in natural language and are interpreted by the same model that interprets user input. This creates a security problem. A user can write an adversarial message that attempts to override the system prompt, distract the model from its task, reveal hidden instructions, or force unsafe behaviour. Such attacks are commonly known as prompt injection or jailbreak attacks.
+
+PromptMap was developed to test these risks in a structured way. It provides a web interface and testing engine that can run adversarial prompt rules against a target LLM, store the target responses, evaluate them with one or more judge models, and compare results across different runs.
+
+\section{Motivation}
+Manual prompt testing is useful during early development, but it is not sufficient for systematic security evaluation. A developer may try a few common attacks and believe the prompt is safe, while missing many other categories. LLM behaviour is also non-deterministic, so the same attack may need to be tested multiple times. Furthermore, a prompt may behave differently across models.
+
+The motivation behind PromptMap is to bring software-testing discipline to prompt security. In ordinary software engineering, developers use test suites, assertions, logs, and regression checks. Prompt security needs a similar workflow. A user should be able to select a system prompt, choose a model, run a reusable set of adversarial rules, save the evidence, judge the outputs, and compare the resulting pass rates.
+
+\section{Problem Statement}
+The problem addressed in this project is the design and implementation of a framework that can automatically evaluate the robustness of LLM system prompts against adversarial user inputs. Given a system prompt, a target model, and a set of adversarial rules, the framework should execute the rules, collect model responses, determine whether each response passes or fails the intended safety condition, and store the results for inspection and comparison.
+
+More formally, for a system prompt $S$, target model $M$, and rule set $R = \{r_1, r_2, ..., r_n\}$, the system must load $S$, execute each selected rule $r_i$ against $M$, repeat the test for a configurable number of iterations, store every raw response, evaluate the responses using deterministic checks and judge models, aggregate the verdicts, and produce run-level statistics.
+
+\section{Objectives}
+The major objectives of the project are:
+
+\begin{itemize}
+\item To build a practical web application for LLM prompt security testing.
+\item To support local Ollama models and Google Gemini models.
+\item To implement a YAML-based adversarial rule library that is easy to extend.
+\item To separate response generation from judging so saved responses can be re-evaluated later.
+\item To combine deterministic checks with LLM-based judging.
+\item To support multi-judge voting and conservative aggregation for high-risk categories.
+\item To store detailed JSON and CSV outputs for reproducibility.
+\item To provide pages for running tests, viewing history, inspecting run details, and comparing runs.
+\end{itemize}
+
+\section{Scope}
+PromptMap is designed as a local developer and researcher tool. It is not a production firewall and does not claim to guarantee complete prompt safety. Instead, it automates a repeatable evaluation workflow. The project includes a Flask web UI, a Python testing engine, model-provider support, sample system prompts, a rule corpus, result storage, and comparison features.
+
+The current scope does not include authentication, multi-user deployment, database-backed storage, automatic prompt repair, or CI/CD integration. These are treated as future extensions.
+
+\section{Project Contribution}
+The main contribution of the project is an end-to-end workflow for prompt red-teaming. Many small scripts can send attack prompts to a model, but PromptMap combines configuration, rule selection, repeated target execution, saved evidence, judging, aggregation, export, history, and comparison in a single application. This makes the tool useful not only for one-time testing but also for repeated evaluation during prompt development.
+
+Another contribution is the separation of target response generation from judging. This design allows a user to first save raw outputs and later evaluate them with one or more judge models. It also allows the same target outputs to be re-judged without rerunning the target model. This is useful when model calls are slow, expensive, or non-deterministic.
+
+The project also contributes deterministic analysis for cases where direct evidence is available. Prompt leakage, judge manipulation, refusal absence, and unsafe procedural formatting can often be detected without depending fully on an LLM judge. PromptMap therefore uses deterministic checks as a supporting layer before or alongside judge-model evaluation.
+
+\section{Example Scenario}
+Consider an educational tutor assistant. Its system prompt may instruct the model to help students understand concepts, avoid doing complete homework for them, and refuse unsafe or unrelated requests. A user may still ask the tutor to reveal its hidden instructions, pretend to be an unrestricted assistant, or provide harmful advice. Without systematic testing, the developer may only test ordinary educational questions and miss these cases.
+
+Using PromptMap, the developer can select the educational tutor prompt, choose a target model such as an Ollama model, and run harmful, prompt-stealing, and jailbreak rules. The tool records every response, judges the saved outputs, and reports which tests failed. The developer can then revise the prompt or change the model and run the same tests again.
+
+\section{Why Web-Based Testing}
+A command-line tool is powerful for technical users, but a web interface makes the workflow easier to understand and demonstrate. The PromptMap UI exposes model selection, judge selection, rule filters, iteration count, logs, run history, and comparison pages. This is especially useful in an academic project because the workflow can be shown visually and the generated outputs can be inspected without manually opening result files.
+
+\section{Challenges}
+The project faced several design challenges. First, model-provider APIs differ, so the engine needed a common abstraction for Ollama and Google Gemini. Second, LLM calls can be slow, so the Flask application needed background jobs and polling. Third, judge outputs can be unreliable, so the system needed strict judge prompts and vote aggregation. Fourth, prompt security categories have different meanings; for example, evaluating prompt stealing requires different logic from evaluating social bias. Finally, the tool needed to store enough evidence for reproducibility without making the UI too complex.
+
+\section{Organization of The Report}
+Chapter 2 discusses background concepts and related work, including prompt injection, jailbreaks, prompt stealing, LLM-as-judge evaluation, and rule-based testing. Chapter 3 presents the system requirements and design of PromptMap. Chapter 4 explains implementation details and evaluation behaviour. The final chapter concludes the report and discusses limitations and future work.

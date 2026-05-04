@@ -79,6 +79,7 @@
           <a id="dl-json" href="#" class="btn btn-sm btn-outline-light"><i class="bi bi-filetype-json me-1"></i>JSON</a>
           <a id="dl-csv" href="#" class="btn btn-sm btn-outline-light"><i class="bi bi-filetype-csv me-1"></i>CSV</a>
           <button id="judge-run-btn" class="btn btn-sm btn-outline-warning" onclick="judgeRun()"><i class="bi bi-check2-square me-1"></i>Judge Run</button>
+          <button id="resume-run-btn" class="btn btn-sm btn-outline-info" onclick="resumeRun()" style="display:none"><i class="bi bi-play-circle me-1"></i>Resume</button>
           <button id="rerun-btn" class="btn btn-sm btn-danger" onclick="runAgain()"><i class="bi bi-arrow-repeat me-1"></i>Run Again</button>
         </div>
       </div>
@@ -376,11 +377,57 @@ async function runAgain() {
   pollRunJob(data.job_id, data.run_id);
 }
 
+async function resumeRun() {
+  if (!confirm("Resume this run from the last saved response?")) {
+    return;
+  }
+
+  document.getElementById("resume-run-btn").disabled = true;
+  document.getElementById("rerun-btn").disabled = true;
+  setRunProgressStatus("running");
+  setRunProgressLog(`Resuming run ${JOB_ID}...`);
+
+  const cfg = runData?.config || {};
+  const judges = getJudgePayload();
+  const payload = {
+    google_api_key: cfg.google_api_key || null,
+    ollama_url: cfg.ollama_url || "http://localhost:11434",
+  };
+  if (judges.length) payload.judges = judges;
+
+  const res = await fetch(`/api/runs/resume/${JOB_ID}`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    setRunProgressStatus("error");
+    setRunProgressLog(data.error || "Failed to resume run.");
+    document.getElementById("resume-run-btn").disabled = false;
+    document.getElementById("rerun-btn").disabled = false;
+    return;
+  }
+  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: data.job_id, run_id: JOB_ID, mode: "resume" }));
+  localStorage.setItem(LATEST_RUN_KEY, JOB_ID);
+  pollRunJob(data.job_id, JOB_ID);
+}
+
 function pollRunJob(jobId, runId) {
   if (runPollTimer) clearInterval(runPollTimer);
   let lastLogLen = 0;
   runPollTimer = setInterval(async () => {
     const r = await fetch(`/api/job/${jobId}`);
+    if (!r.ok) {
+      clearInterval(runPollTimer);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setRunProgressStatus("error");
+      appendRunProgress("Background job was not found. Use Resume to continue from the saved checkpoint.");
+      document.getElementById("resume-run-btn").style.display = "";
+      document.getElementById("resume-run-btn").disabled = false;
+      document.getElementById("rerun-btn").disabled = false;
+      return;
+    }
     const data = await r.json();
     const newLines = (data.logs || []).slice(lastLogLen);
     if (newLines.length) {
@@ -408,6 +455,14 @@ function pollJudgeJob(jobId) {
   let lastLogLen = 0;
   judgePollTimer = setInterval(async () => {
     const r = await fetch(`/api/job/${jobId}`);
+    if (!r.ok) {
+      clearInterval(judgePollTimer);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setRunProgressStatus("error");
+      appendRunProgress("Background judging job was not found. Start judging again when ready.");
+      document.getElementById("judge-run-btn").disabled = false;
+      return;
+    }
     const data = await r.json();
     const newLines = (data.logs || []).slice(lastLogLen);
     if (newLines.length) {
@@ -435,6 +490,24 @@ function pollJudgeJob(jobId) {
       document.getElementById("judge-run-btn").disabled = false;
     }
   }, 1000);
+}
+
+function resumeActiveJobIfNeeded() {
+  const raw = localStorage.getItem(ACTIVE_JOB_KEY);
+  if (!raw) return;
+  try {
+    const active = JSON.parse(raw);
+    if (active.run_id !== JOB_ID || !active.job_id) return;
+    setRunProgressStatus("running");
+    setRunProgressLog(`Reconnected to ${active.mode || "background"} job ${active.job_id}...`);
+    if (active.mode === "judge") {
+      pollJudgeJob(active.job_id);
+    } else {
+      pollRunJob(active.job_id, JOB_ID);
+    }
+  } catch {
+    localStorage.removeItem(ACTIVE_JOB_KEY);
+  }
 }
 
 function render(){
@@ -466,6 +539,9 @@ function render(){
     ? '<i class="bi bi-arrow-repeat me-1"></i>Run Again'
     : '<i class="bi bi-play-fill me-1"></i>Run This Config';
   document.getElementById("rerun-btn").disabled = !(runData.config && runData.config.target_model);
+  const canResume = meta.status === "interrupted" || meta.status === "running";
+  document.getElementById("resume-run-btn").style.display = canResume ? "" : "none";
+  document.getElementById("resume-run-btn").disabled = !canResume;
   setRunProgressStatus("idle");
   setRunProgressLog('Use "Run Again" to start a new actor run from this page.');
 
@@ -481,6 +557,7 @@ function render(){
   allTests = Object.values(tests);
   populateTypeFilter();
   renderTestList(allTests);
+  resumeActiveJobIfNeeded();
 }
 
 function populateTypeFilter(){

@@ -1,0 +1,5 @@
+run_id,label,severity,passed,total,failed,critical_count,pass_rate_pct
+aa647543,"aa647543
+llama3-chatqa",medium,0,27,27,0,0.0
+aa647543,"aa647543
+llama3-chatqa",high,0,1,1,1,0.0

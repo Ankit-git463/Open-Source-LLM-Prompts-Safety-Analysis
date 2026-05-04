@@ -679,13 +679,28 @@ def run_single_test(target_client, target_model, target_model_type,
     return res
 
 
-def generate_single_test( target_client, target_model, target_model_type, system_prompt, rule, iterations=3, log_fn: Callable = None, ) -> Dict:
+def _completed_response_iterations(test: dict) -> List[dict]:
+    """Return non-error target response iterations that can be reused while resuming."""
+    return [
+        iteration for iteration in (test or {}).get("iterations", [])
+        if not iteration.get("is_error")
+    ]
+
+
+def _response_test_complete(test: dict, iterations: int) -> bool:
+    return len(_completed_response_iterations(test)) >= iterations
+
+
+def generate_single_test( target_client, target_model, target_model_type, system_prompt, rule, iterations=3, log_fn: Callable = None, existing_test: dict = None, ) -> Dict:
     def log(msg):
         if log_fn:
             log_fn(msg)
 
-    iteration_records = []
-    for i in range(iterations):
+    iteration_records = _completed_response_iterations(existing_test)
+    if iteration_records:
+        log(f"  Reusing {len(iteration_records)}/{iterations} completed iteration(s).")
+
+    for i in range(len(iteration_records), iterations):
         log(f"  Iteration {i+1}/{iterations}...")
         ts = datetime.datetime.now().isoformat(timespec="seconds")
         response, is_error = call_model(
@@ -794,6 +809,7 @@ def recompute_run_summary(data: Dict) -> Dict:
     judge_failures = sum(1 for it in all_iterations if it["verdict"] == "fail" and not it["deterministic"])
 
     meta = data.setdefault("meta", {})
+    current_status = meta.get("status")
     meta["total_tests"] = len(tests)
     meta["judged_tests"] = total_judged
     meta["pending_tests"] = len(tests) - total_judged
@@ -850,7 +866,10 @@ def recompute_run_summary(data: Dict) -> Dict:
     # ─── Risk indicators ────────────────────────────────────────────────────
     meta["conservative_high_risk_failures"] = conservative_fails
     meta["deterministic_failure_iterations"] = deterministic_failure_iterations
-    meta["status"] = "judged" if total_judged == len(tests) and tests else "responses_saved"
+    if current_status in {"running", "interrupted"}:
+        meta["status"] = current_status
+    else:
+        meta["status"] = "judged" if total_judged == len(tests) and tests else "responses_saved"
     
     return data
 
@@ -962,12 +981,23 @@ def judge_saved_run( data: Dict, judges: List[dict], ollama_url: str = "http://l
     meta["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
     return recompute_run_summary(data)
 
-def generate_responses( target_model, target_model_type, system_prompts_path, iterations=3, severities=None, rule_names=None, rule_types=None, ollama_url="http://localhost:11434", google_api_key=None, output_path=None, rules_dir="rules", log_fn: Callable = None, ) -> Dict:
+def generate_responses( target_model, target_model_type, system_prompts_path, iterations=3, severities=None, rule_names=None, rule_types=None, ollama_url="http://localhost:11434", google_api_key=None, output_path=None, rules_dir="rules", log_fn: Callable = None, existing_data: Dict = None, checkpoint_fn: Callable = None, resume: bool = False, ) -> Dict:
     def log(msg):
         if log_fn:
             log_fn(msg)
 
-    started_at = datetime.datetime.now().isoformat(timespec="seconds")
+    started_at = (
+        (existing_data or {}).get("meta", {}).get("started_at")
+        if resume else None
+    ) or datetime.datetime.now().isoformat(timespec="seconds")
+
+    def checkpoint(data: Dict):
+        recompute_run_summary(data)
+        data.setdefault("meta", {})["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+        if output_path:
+            save_results_json(output_path, data)
+        if checkpoint_fn:
+            checkpoint_fn(data)
 
     log("Initializing target client...")
     target_client = initialize_client(target_model_type, ollama_url, google_api_key)
@@ -989,27 +1019,15 @@ def generate_responses( target_model, target_model_type, system_prompts_path, it
         return {"meta": {}, "tests": {}}
 
     total = len(filtered)
-    log(f"Generating responses for {total} test(s)...")
-
-    tests = {}
-    for idx, (name, rule) in enumerate(filtered.items(), 1):
-        log(f"\n{'='*60}")
-        log(f"[{idx}/{total}] {name}")
-        log(f"Type: {rule['type']}  |  Severity: {rule['severity']}")
-        log(f"{'='*60}")
-        rule["name"] = name
-        result = generate_single_test(
-            target_client, target_model, target_model_type,
-            system_prompt, rule, iterations,
-            log_fn=log_fn,
-        )
-        tests[name] = result
-        if any(it.get("is_error") for it in result["iterations"]):
-            log("Stopping due to API error.")
-            break
+    existing_tests = (existing_data or {}).get("tests", {}) if resume else {}
+    tests = dict(existing_tests)
+    if resume and existing_tests:
+        reusable = sum(1 for name in filtered if _response_test_complete(existing_tests.get(name), iterations))
+        log(f"Resuming run with {reusable}/{total} test(s) already complete.")
 
     output = {
         "meta": {
+            **((existing_data or {}).get("meta", {}) if resume else {}),
             "target_model": target_model,
             "target_model_type": target_model_type,
             "controller_model": "",
@@ -1023,11 +1041,45 @@ def generate_responses( target_model, target_model_type, system_prompts_path, it
             "rule_names_filter": rule_names,
             "started_at": started_at,
             "finished_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "status": "responses_saved",
+            "status": "running",
             "workflow": "generate_then_judge",
+            "planned_tests": list(filtered.keys()),
+            "total_planned_tests": total,
         },
         "tests": tests,
     }
+    checkpoint(output)
+
+    log(f"Generating responses for {total} test(s)...")
+
+    for idx, (name, rule) in enumerate(filtered.items(), 1):
+        existing_test = tests.get(name)
+        if resume and _response_test_complete(existing_test, iterations):
+            log(f"\n[{idx}/{total}] {name} already has {iterations}/{iterations} response iteration(s). Skipping.")
+            continue
+
+        log(f"\n{'='*60}")
+        log(f"[{idx}/{total}] {name}")
+        log(f"Type: {rule['type']}  |  Severity: {rule['severity']}")
+        log(f"{'='*60}")
+        rule["name"] = name
+        result = generate_single_test(
+            target_client, target_model, target_model_type,
+            system_prompt, rule, iterations,
+            existing_test=existing_test,
+            log_fn=log_fn,
+        )
+        tests[name] = result
+        checkpoint(output)
+        if any(it.get("is_error") for it in result["iterations"]):
+            log("Stopping due to API error.")
+            output["meta"]["status"] = "interrupted"
+            checkpoint(output)
+            break
+
+    if output["meta"].get("status") != "interrupted":
+        output["meta"]["status"] = "responses_saved"
+    output["meta"]["finished_at"] = datetime.datetime.now().isoformat(timespec="seconds")
     recompute_run_summary(output)
     if output_path:
         save_results_json(output_path, output)

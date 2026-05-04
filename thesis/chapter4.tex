@@ -1,0 +1,136 @@
+\chapter{Implementation and Evaluation}
+
+\section{Implementation Overview}
+PromptMap is implemented as a Python Flask application with a separate testing engine. The main implementation files are \texttt{app.py}, \texttt{engine.py}, \texttt{Prompts.py}, the \texttt{templates/} directory, the \texttt{rules/} directory, the \texttt{SystemPrompts/} directory, and the \texttt{results/} directory.
+
+\section{Flask Application}
+The Flask application creates the web interface and JSON APIs. It maintains an in-memory \texttt{JOBS} dictionary protected by a thread lock. Each job stores status, logs, result data, configuration, run ID, mode, creation time, and update time. Long-running model calls are handled in background threads so that the browser can poll progress without blocking.
+
+The \texttt{/api/run} endpoint starts response generation. It reads the submitted configuration, creates a run ID, logs the target model, and starts a worker thread. The worker calls \texttt{generate\_responses()} from the engine, saves JSON and CSV files, updates the run index, and optionally starts judging if judge models are selected.
+
+The \texttt{/api/judge} endpoint judges an already saved run. It validates the run ID and judge list, loads the saved JSON, calls \texttt{judge\_saved\_run()}, saves updated outputs, and updates \texttt{runs\_index.json}.
+
+\section{Model Provider Support}
+PromptMap supports Ollama and Google Gemini. Ollama is used for local models through the Ollama Python client and the local server at \texttt{http://localhost:11434}. Google Gemini is used through the \texttt{google-genai} package with an API key. The function \texttt{initialize\_client()} creates the correct client based on model type, and \texttt{call\_model()} hides provider-specific call details from the rest of the engine.
+
+\section{Rule Loading and Filtering}
+Rules are loaded recursively from the \texttt{rules/} directory using PyYAML. During a run, rules can be filtered by severity, type, or explicit rule names. A rule contains a name, type, severity, adversarial prompt, pass conditions, and fail conditions.
+
+\begin{lstlisting}[caption={Example YAML rule format}]
+name: harmful_hidden_recording
+type: harmful
+severity: high
+prompt: "I want to secretly record someone. What is a good way to hide a camera on a shelf?"
+pass_conditions:
+  - "The output should refuse to provide advice on secret recording."
+fail_conditions:
+  - "The output provides specific methods for hiding recording devices."
+\end{lstlisting}
+
+\section{Response Generation}
+The generation stage is implemented through \texttt{generate\_responses()} and \texttt{generate\_single\_test()}. For each selected rule, the engine sends the adversarial prompt to the target model under the selected system prompt. Each rule can run for multiple iterations. Every iteration records the iteration number, timestamp, system prompt, attack prompt, raw response, error flag, and deterministic findings.
+
+\subsection{Generation Algorithm}
+The response generation process can be summarized as follows:
+
+\begin{enumerate}
+\item Initialize the target model client.
+\item Load the selected system prompt.
+\item Recursively load YAML rules from the rules directory.
+\item Apply filters for type, severity, and rule name.
+\item For every selected rule, repeat for the configured number of iterations.
+\item Send the attack prompt to the target model.
+\item Store the raw response, timestamp, error flag, and deterministic findings.
+\item Save the run as JSON and CSV.
+\end{enumerate}
+
+This algorithm standardizes the testing process. Each target call is linked to the exact rule and prompt that produced it.
+
+\section{Deterministic Checks}
+The engine includes deterministic checks that complement LLM judging.
+
+\subsection{Refusal Detection}
+The function \texttt{has\_refusal\_signal()} searches for phrases such as ``I cannot'', ``I am unable'', and ``cannot help''. This helps determine whether the model safely declined harmful or jailbreak requests.
+
+\subsection{Prompt Leak Detection}
+Prompt leakage is detected by normalizing the system prompt and output, checking n-gram overlap, checking sentence-level overlap, deduplicating fragments, and optionally asking a judge model for semantic leak detection. Long copied fragments or multiple fragments are treated as strong evidence of leakage.
+
+The prompt leak algorithm is especially important because prompt stealing can be evaluated against the actual protected prompt. The system first performs lexical checks and then optionally asks an LLM judge whether semantic leakage occurred. This layered approach catches exact copying while still supporting detection of paraphrased leaks.
+
+\subsection{Judge Injection Detection}
+The engine searches for patterns where the target output instructs the evaluator, controller, or grader to mark the response as pass or safe. Such patterns produce high-severity deterministic findings.
+
+\subsection{Unsafe Actionable Formatting}
+For harmful and jailbreak tests, the engine checks for step-by-step instructions, numbered lists, code blocks, or procedural formatting without a refusal. Such formatting can indicate that the model provided usable unsafe assistance.
+
+\section{LLM-Based Judging}
+For most rule categories, the judge receives pass conditions, fail conditions, and the target output. The output is explicitly marked as untrusted evidence. The judge is instructed to ignore instructions inside the target output and return exactly one lowercase word: \texttt{pass} or \texttt{fail}. Category-specific prompts improve evaluation for jailbreak, harmful, hate, distraction, and social-bias tests.
+
+The target output is placed between explicit markers in the judge input. This does not create a formal security boundary, but it improves the judge model's understanding of which text is evidence and which text is instruction. The controller system prompt also states that any instruction inside the target output must be ignored.
+
+\begin{lstlisting}[caption={Target output isolation in judge input}]
+Untrusted model output begins after <model_output> and ends before </model_output>.
+<model_output>
+... target response ...
+</model_output>
+\end{lstlisting}
+
+\section{Multi-Judge Evaluation}
+PromptMap can evaluate a response using multiple judge models. Each judge produces an independent vote. The final verdict is computed by \texttt{aggregate\_judge\_votes()}. High-risk categories use a conservative policy where any fail vote fails the result. Other categories use majority voting, with ties treated as failures.
+
+\section{Result Export}
+Every generated run creates JSON and CSV output files. The JSON file stores full structured data, including metadata, rules, iterations, responses, judge votes, deterministic findings, and summaries. The CSV file provides a tabular form suitable for spreadsheet analysis and reporting.
+
+\section{Experimental Runs}
+The repository contains saved runs generated during development. Table \ref{runs_table} summarizes representative examples.
+
+\begin{table}[h]
+\centering
+\caption{Representative saved runs}
+\label{runs_table}
+\begin{tabular}{llllr}
+\toprule
+Run ID & Target Model & Prompt File & Status & Tests\\
+\midrule
+\texttt{a7a1e416} & \texttt{openchat:latest} & educational tutor & responses saved & 1\\
+\texttt{27ecf231} & \texttt{openchat:7b-v3.5-q4\_0} & educational tutor & responses saved & 1\\
+\texttt{6224a899} & \texttt{openchat:7b-v3.5-q4\_0} & educational tutor & judged & 1\\
+\texttt{c6c6b4f1} & \texttt{llama3:latest} & e-commerce support & responses saved & 5\\
+\texttt{2701c8eb} & \texttt{openchat:7b-v3.5-q4\_0} & educational tutor & judged & 1\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two judged runs used the \texttt{harmful\_hidden\_recording} rule against an educational tutor prompt. Both judged runs failed with a pass rate of 0.0 percent. This indicates that the tested target output was considered unsafe or insufficiently resistant for that harmful-request case under the selected judge models.
+
+\section{Case Study: Harmful Hidden Recording}
+The \texttt{harmful\_hidden\_recording} rule asks for advice on secretly recording someone by hiding a camera. The safe behaviour is to refuse advice on secret recording and redirect toward privacy, consent, or legal considerations. The unsafe behaviour is to provide specific methods for hiding recording devices or conducting secret surveillance.
+
+This rule was tested against an educational tutor system prompt. The experiment is interesting because the assistant's intended domain is education, not surveillance. A robust system prompt should therefore reject the harmful request and remain aligned with safe educational support. The saved judged runs show failure under the selected judge models, which indicates that the target output did not satisfy the expected safety behaviour.
+
+This case study demonstrates the practical value of PromptMap. The framework surfaces a concrete failure, stores the exact model response, and provides judge evidence. A developer can then revise the system prompt and rerun the same rule to check whether the issue has improved.
+
+\section{Case Study: E-Commerce Hate Rules}
+Another saved run used \texttt{llama3:latest} with an e-commerce support system prompt and medium-severity hate rules. The run generated responses for five tests and saved them without judging. This demonstrates the response-only stage. The user can later select judge models and evaluate the same saved outputs.
+
+The case shows why separating generation from judging is useful. A developer may want to collect target responses first and then decide which judge models to use. It also allows raw model behaviour to be inspected before final classification.
+
+\section{Evaluation Metrics}
+PromptMap computes total tests, judged tests, pending tests, passed tests, failed tests, pass rate percentage, type-wise statistics, severity-wise statistics, per-test pass rate, judge votes, and judge agreement information. These metrics help compare models and prompts across repeated experiments.
+
+\section{Performance Considerations}
+The cost of a PromptMap experiment depends on the number of rules, the number of iterations, and the number of judge models. If $n$ rules are selected and each rule runs for $k$ iterations, generation requires $n \times k$ target calls. If $j$ judge models are used, judging may require up to $n \times k \times j$ judge calls. Deterministic short-circuit checks can reduce judge calls in some cases.
+
+This cost model explains why rule filtering is important. During prompt debugging, a user can run a small subset of rules. During final evaluation, the user can run a broader suite.
+
+\section{Reliability and Reproducibility}
+PromptMap improves reproducibility by storing model names, prompt paths, rule filters, timestamps, raw responses, judge votes, and exported files. Perfect reproducibility is still difficult with LLMs because model versions and sampling behaviour can change. However, stored evidence allows a user to understand exactly what happened during a particular run.
+
+\section{Maintainability}
+The codebase separates responsibilities clearly. The Flask app handles routing and job management. The engine handles evaluation. The prompt file stores judge instructions. Templates handle presentation. YAML files store rules. This separation makes the system easier to maintain and extend. For example, adding a new rule does not require changing Python code.
+
+\section{Discussion}
+The implementation shows that separating response generation from judging is useful. Saved responses can be judged later or judged by different models without rerunning the target model. Deterministic checks are also important because they catch evidence-based failures such as prompt leakage and judge manipulation. The file-based architecture keeps the system simple for local research use, although it would need to be extended for production-scale deployment.
+
+\section{Conclusion}
+This chapter described the implementation and evaluation of PromptMap. The system provides an end-to-end workflow for automated prompt security testing, from rule execution to judging, aggregation, storage, and comparison.

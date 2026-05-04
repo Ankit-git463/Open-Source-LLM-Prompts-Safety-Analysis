@@ -1,0 +1,49 @@
+\chapter{Conclusion and Future Work}
+
+\section{Conclusion}
+This project designed and implemented PromptMap, a web-based framework for automated LLM prompt security evaluation. The system allows a user to select a target model, load a system prompt, execute adversarial YAML rules, save raw responses, judge those responses using one or more evaluator models, and compare results across runs.
+
+The project addresses an important challenge in modern LLM application development: system prompts are central to behaviour, but they are not absolute security boundaries. Prompt injection, jailbreaks, prompt stealing, harmful requests, hate, social bias, distraction, and judge manipulation can all cause failures. PromptMap provides a structured way to test these risks.
+
+\section{Key Outcomes}
+The main outcomes of the project are:
+
+\begin{itemize}
+\item A functional Flask web application for prompt security testing.
+\item A reusable YAML rule format for adversarial prompts.
+\item Support for multiple attack categories and severity filters.
+\item A two-stage workflow that separates generation from judging.
+\item Deterministic checks for prompt leakage, judge manipulation, refusal signals, and unsafe formatting.
+\item Multi-judge evaluation with conservative aggregation for high-risk categories.
+\item Persistent result storage in JSON and CSV.
+\item Run history, detail inspection, download, deletion, and comparison features.
+\end{itemize}
+
+\section{Limitations}
+PromptMap has some limitations. The current storage layer is file-based and may not scale well for very large campaigns. Active job state is stored in memory, so running job status is lost if the Flask server restarts. LLM-as-judge evaluation can be inconsistent. The implemented workflow currently supports only Ollama and Google Gemini. The tool identifies failures but does not automatically repair prompts. There is also no authentication or role-based access control for multi-user deployment.
+
+Another limitation is that the current system focuses mainly on direct adversarial prompts. Many real-world attacks are indirect. For example, a model may read malicious instructions from a webpage, retrieved document, or tool output. Extending PromptMap to indirect prompt injection would require modelling external content sources and tool-use workflows.
+
+\section{Future Work}
+Future work can extend PromptMap in several directions. A database such as SQLite or PostgreSQL can replace file-only storage. A persistent job queue can make long-running tests more reliable. Additional providers such as OpenAI, Anthropic, and Mistral can be added. A rule-authoring interface can help users create and validate rules from the web UI. Scheduled regression testing can be added for CI/CD workflows. Richer analytics can show category pass rates, severity trends, judge disagreement, and model comparison heatmaps. Prompt repair suggestions can help developers improve weak system prompts after failures are found.
+
+\subsection{Database-Backed Storage}
+A database would allow stronger indexing, faster queries, concurrent access, and better management of large result histories. It would also support user accounts and team-level result tracking.
+
+\subsection{Persistent Job Queue}
+Background jobs can be moved from in-memory threads to a persistent worker queue. This would allow long experiments to survive server restarts and would make the tool more reliable for large test suites.
+
+\subsection{Rule Authoring Interface}
+A web-based rule authoring interface could help users create, validate, and organize YAML rules. It could check required fields, preview attack prompts, and enforce consistent severity labels.
+
+\subsection{Indirect Prompt Injection Testing}
+Future versions can include indirect prompt injection scenarios where malicious instructions are embedded inside documents, webpages, retrieved context, or tool outputs. This would make the framework more realistic for retrieval-augmented and tool-using LLM applications.
+
+\subsection{Automated Reports}
+PromptMap can be extended to generate PDF reports summarizing test configuration, pass rates, category statistics, and selected failed examples. This would make it easier to share results with project supervisors, developers, or security reviewers.
+
+\section{Broader Impact}
+PromptMap is intended to support safer LLM application development. By making security testing easier, it can help developers notice unsafe behaviour before deployment. At the same time, adversarial prompt corpora should be used responsibly. The intended use of this project is defensive evaluation and education.
+
+\section{Final Remarks}
+PromptMap demonstrates that LLM prompt security can be approached with the discipline of software testing. By using reusable rules, repeated execution, evidence preservation, deterministic checks, and multi-judge evaluation, the project provides a strong foundation for prompt red-teaming. It does not eliminate the need for human review, but it makes that review more systematic, repeatable, and evidence-driven.

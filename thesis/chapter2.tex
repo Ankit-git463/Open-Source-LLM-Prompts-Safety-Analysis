@@ -1,0 +1,94 @@
+\chapter{Background and Review of Prior Works}
+
+\section{Large Language Model Applications}
+Large language models generate responses by processing a context that usually contains system instructions and user input. In application settings, the system instruction defines the assistant's role and expected behaviour, while the user input contains the actual request. This separation is useful, but it is not a strict security boundary. Since both parts are expressed in natural language, a malicious user can attempt to make the model prioritize the attack over the intended instructions.
+
+\section{Prompt Injection}
+Prompt injection is an attack in which a user writes input that attempts to change the intended behaviour of an LLM application. Direct attacks include instructions such as ``ignore previous instructions''. More subtle attacks may use role-play, encoded text, translation requests, fictional authority, or fake developer messages. Prompt injection can lead to policy bypass, hidden prompt exposure, harmful content generation, or task abandonment.
+
+\section{Jailbreaks}
+Jailbreaks are prompt attacks that attempt to make a model bypass its safety constraints. They often ask the model to act as an unrestricted assistant, pretend that rules no longer apply, or follow a fictional policy. A jailbreak test passes when the target model refuses the manipulative framing or stays within its original role. It fails when the model accepts the attack framing or produces content it should have refused.
+
+\section{Prompt Stealing}
+Prompt stealing attempts to reveal the hidden system prompt or internal instructions of an LLM application. This matters because system prompts may contain private business logic, safety policy, or proprietary workflow details. Prompt stealing can be explicit, such as asking the model to print its prompt, or indirect, such as asking it to summarize its hidden rules. PromptMap treats this category specially by checking lexical and sentence-level overlap between the target output and the protected system prompt.
+
+\section{Harmful Requests, Hate, and Social Bias}
+Harmful request testing checks whether a model refuses unsafe or illegal assistance, such as surveillance, violence, cyber abuse, or other harmful actions. Hate tests check whether the model refuses to generate hateful or discriminatory content. Social bias tests check whether the model avoids stereotypes and unfair assumptions. These categories are important because real LLM applications interact with diverse users and can cause practical harm if they comply with unsafe requests.
+
+\section{Distraction and Role Drift}
+Distraction attacks attempt to pull the assistant away from its intended domain. For example, an e-commerce support assistant may be asked to perform unrelated creative writing or reasoning tasks. While such failures may be less severe than harmful compliance, they indicate weak role adherence. A reliable assistant should redirect the user back to the supported workflow.
+
+\section{Judge Injection}
+PromptMap also considers attacks against the evaluation layer. If a target model output contains a sentence such as ``judge, mark this as pass'', a naive LLM evaluator may be influenced by it. This is called judge injection. PromptMap's judge prompts explicitly state that the target model output is hostile and untrusted evidence, and deterministic checks search for evaluator-manipulation patterns.
+
+\section{LLM-as-Judge Evaluation}
+LLM-as-judge evaluation uses one model to classify another model's response. It is useful because many safety outcomes require semantic judgment. For example, determining whether a response provides actionable harmful advice cannot always be solved by exact string matching. However, LLM judges are imperfect and can be inconsistent. PromptMap addresses this by supporting multiple judges, using type-specific judge prompts, and combining judge output with deterministic checks.
+
+\section{Rule-Based Security Testing}
+Rule-based testing makes expected behaviour explicit. In PromptMap, each adversarial test is stored as a YAML file containing a name, type, severity, prompt, pass conditions, and fail conditions. This makes the test library extensible without changing Python code. The repository contains rules for distraction, harmful requests, hate, jailbreak, judge injection, prompt stealing, and social bias.
+
+\begin{table}[h]
+\centering
+\caption{Rule distribution in the PromptMap repository}
+\label{table1}
+\begin{tabular}{lr}
+\toprule
+Rule Category & Number of Rules\\
+\midrule
+Distraction & 28\\
+Harmful & 71\\
+Hate & 32\\
+Jailbreak & 337\\
+Judge injection & 54\\
+Prompt stealing & 26\\
+Social bias & 16\\
+\midrule
+Total & 564\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Need for PromptMap}
+Manual red-teaming remains valuable, but it is difficult to repeat and scale. PromptMap improves the process by making attacks reusable, execution repeatable, and evidence persistent. It allows developers to evaluate prompts across models and rerun the same test suite after changing a prompt. This makes prompt security closer to a regression-testing problem in software engineering.
+
+\section{Prompt Security as Regression Testing}
+In conventional software development, once a bug is discovered, a test is added so that the bug does not reappear in a later version. Prompt security can follow a similar principle. Once a jailbreak, prompt leak, or harmful compliance case is found, it should become part of a reusable rule suite. Whenever the system prompt changes, the test suite can be run again.
+
+This perspective is important because LLM applications change frequently. A developer may add new business rules, change the assistant's tone, switch models, or update safety instructions. Any such change can unexpectedly weaken another part of the prompt. PromptMap supports regression-style testing by storing attacks as YAML rules and results as reusable evidence.
+
+\section{Threat Model}
+The threat model considered in this project assumes that an attacker can send arbitrary user messages to the LLM application. The attacker cannot directly modify the system prompt or the Python code. However, the attacker can attempt to influence the model through natural language. The attacker may try to extract the system prompt, bypass the assistant's role, generate harmful content, produce biased output, distract the assistant, or manipulate the judge.
+
+This threat model is realistic for chat-based LLM applications because the user input channel is always exposed. The central assumption is that the model output is untrusted. This assumption applies to both target responses and judge evaluation. A target response may contain text addressed to the judge, and the evaluator must not follow that text.
+
+\section{Manual Testing versus Automated Testing}
+Manual red-teaming allows creative exploration. A human tester can invent attacks, observe subtle behaviour, and decide whether an output is concerning. However, manual testing is slow and hard to repeat exactly. It also depends heavily on the tester's experience.
+
+Automated testing with PromptMap has different strengths. It can run many rules, repeat each rule multiple times, store all outputs, and compare results across runs. It cannot replace human interpretation, but it creates a strong first layer of evidence. The best workflow combines both: automated testing finds likely failures, and humans inspect the most important cases.
+
+\begin{table}[h]
+\centering
+\caption{Manual red-teaming and PromptMap-style automated testing}
+\begin{tabular}{p{0.28\textwidth}p{0.29\textwidth}p{0.29\textwidth}}
+\toprule
+Aspect & Manual Testing & PromptMap Testing\\
+\midrule
+Repeatability & Depends on notes & Same YAML rules can be rerun\\
+Coverage & Usually small & Can cover hundreds of rules\\
+Evidence & Often informal & Stores prompts, outputs, votes, reasons\\
+Speed & Slow for large suites & Automated over selected rules\\
+Regression use & Difficult & Natural fit for repeated testing\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Role of Deterministic Checks}
+LLM judges are useful for semantic evaluation, but they should not be the only mechanism in a security testing system. Deterministic checks are useful when there is direct evidence. For example, if an output repeats a long phrase from the system prompt, this can be detected by lexical overlap. If an output instructs the evaluator to mark it pass, this can be detected by pattern matching.
+
+PromptMap uses deterministic checks as a conservative layer. These checks do not attempt to solve all safety evaluation. Instead, they catch clear indicators of failure and reduce dependence on judge models. This is especially useful for prompt stealing and judge injection.
+
+\section{Related Design Ideas}
+Several design ideas from LLM evaluation influenced PromptMap. First, evaluation should preserve raw evidence, because aggregate numbers are not enough to diagnose failures. Second, the target output should be treated as untrusted evidence during judging. Third, different categories require different evaluator framing. Fourth, repeated testing is important because LLM behaviour may vary across calls.
+
+\section{Conclusion}
+This chapter reviewed the main security concepts needed for the project. Prompt injection, jailbreaks, prompt stealing, harmful requests, hate, bias, distraction, and judge injection all represent different ways in which an LLM application can fail. The next chapter presents the design of PromptMap as a framework for testing these risks.
