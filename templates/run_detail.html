@@ -337,9 +337,9 @@ async function judgeRun() {
     document.getElementById("judge-run-btn").disabled = false;
     return;
   }
-  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: data.job_id, run_id: JOB_ID, mode: "judge" }));
-  localStorage.setItem(LATEST_RUN_KEY, JOB_ID);
-  pollJudgeJob(data.job_id);
+  localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify({ job_id: data.job_id, run_id: data.run_id, source_run_id: JOB_ID, mode: "judge" }));
+  localStorage.setItem(LATEST_RUN_KEY, data.run_id);
+  pollJudgeJob(data.job_id, data.run_id);
 }
 
 async function runAgain() {
@@ -450,7 +450,7 @@ function pollRunJob(jobId, runId) {
   }, 800);
 }
 
-function pollJudgeJob(jobId) {
+function pollJudgeJob(jobId, outputRunId = JOB_ID) {
   if (judgePollTimer) clearInterval(judgePollTimer);
   let lastLogLen = 0;
   judgePollTimer = setInterval(async () => {
@@ -474,12 +474,17 @@ function pollJudgeJob(jobId) {
       localStorage.removeItem(ACTIVE_JOB_KEY);
       setRunProgressStatus("done");
       const finishedLog = document.getElementById("run-progress-log").textContent;
+      if (outputRunId && outputRunId !== JOB_ID) {
+        appendRunProgress(`Judging complete. Opening new judged run ${outputRunId}...`);
+        window.location.href = `/run/${outputRunId}`;
+        return;
+      }
       runData = data.result;
       render();
       setRunProgressStatus("done");
       setRunProgressLog(finishedLog);
       appendRunProgress("Judging complete.");
-      document.getElementById("judge-status").textContent = "Judging complete. Conservative voting and disagreement metrics have been applied.";
+      document.getElementById("judge-status").textContent = "Judging complete. Majority voting has been applied.";
       document.getElementById("judge-run-btn").disabled = false;
     } else if (data.status === "error") {
       clearInterval(judgePollTimer);
@@ -501,7 +506,7 @@ function resumeActiveJobIfNeeded() {
     setRunProgressStatus("running");
     setRunProgressLog(`Reconnected to ${active.mode || "background"} job ${active.job_id}...`);
     if (active.mode === "judge") {
-      pollJudgeJob(active.job_id);
+      pollJudgeJob(active.job_id, active.run_id || JOB_ID);
     } else {
       pollRunJob(active.job_id, JOB_ID);
     }
@@ -533,7 +538,7 @@ function render(){
   document.getElementById("dl-json").href = `/api/download/${JOB_ID}/json`;
   document.getElementById("dl-csv").href = `/api/download/${JOB_ID}/csv`;
   document.getElementById("judge-status").textContent = meta.status === "judged"
-    ? `Latest judgment used ${meta.latest_judgment?.judge_count || 0} judge model(s). Disagreement: ${meta.judge_disagreement_rate_pct || 0}%. Conservative high-risk failures: ${meta.conservative_high_risk_failures || 0}.`
+    ? `Latest judgment used ${meta.latest_judgment?.judge_count || 0} judge model(s). Disagreement: ${meta.judge_disagreement_rate_pct || 0}%. Final verdicts use majority vote; ties fail.`
     : "Responses are saved locally. Run judging when you're ready.";
   document.getElementById("rerun-btn").innerHTML = meta.status === "judged"
     ? '<i class="bi bi-arrow-repeat me-1"></i>Run Again'
@@ -689,9 +694,7 @@ function showIteration(idx){
 
   const voteLines = (it.judge_votes || []).map(v => `${v.model} (${v.model_type}) => ${v.verdict}${v.reason ? ` | ${v.reason}` : ""}`).join("\n");
   const deterministicLines = (it.deterministic_findings || []).map(f => `${f.check} [${f.severity}] ${f.reason}`).join("\n");
-  const voteMeta = it.vote_policy
-    ? `Policy: ${it.vote_policy} | Agreement: ${Math.round((it.judge_agreement_rate || 0) * 100)}% | Disagreement: ${it.judge_disagreement ? "yes" : "no"}`
-    : "";
+  const voteMeta = `Agreement: ${Math.round((it.judge_agreement_rate || 0) * 100)}% | Disagreement: ${it.judge_disagreement ? "yes" : "no"}`;
 
   document.getElementById("iter-content").innerHTML = `
     <div class="row g-3">
@@ -700,7 +703,7 @@ function showIteration(idx){
           <div><span class="section-label d-block">Verdict</span>${verdictHtml}</div>
           <div><span class="section-label d-block">Timestamp</span><span style="font-size:.82rem">${esc(it.timestamp)}</span></div>
           ${it.reason ? `<div><span class="section-label d-block">Reason</span><span class="${isPending ? "text-primary" : "text-danger"}" style="font-size:.82rem">${esc(it.reason)}</span></div>` : ""}
-          ${voteMeta ? `<div><span class="section-label d-block">Vote Policy</span><span style="font-size:.82rem">${esc(voteMeta)}</span></div>` : ""}
+          ${voteMeta ? `<div><span class="section-label d-block">Vote Summary</span><span style="font-size:.82rem">${esc(voteMeta)}</span></div>` : ""}
         </div>
       </div>
 

@@ -186,6 +186,7 @@ def api_run():
                 rules_dir=cfg.get("rules_dir", "rules"),
                 log_fn=log,
                 checkpoint_fn=checkpoint,
+                checkpoint_interval=int(cfg.get("checkpoint_interval", 2)),
             )
 
             # Persist files
@@ -194,12 +195,18 @@ def api_run():
 
             if judges:
                 append_job_log(run_id, "Target responses saved. Starting judge phase...")
+                def judge_checkpoint(updated):
+                    judged_cfg = dict(cfg)
+                    judged_cfg["judges"] = judges
+                    persist_run_outputs(run_id, updated, judged_cfg)
                 data = judge_saved_run(
                     data,
                     judges=judges,
                     ollama_url=cfg.get("ollama_url", "http://localhost:11434"),
                     google_api_key=cfg.get("google_api_key") or None,
                     log_fn=log,
+                    checkpoint_fn=judge_checkpoint,
+                    checkpoint_interval=int(cfg.get("checkpoint_interval", 2)),
                 )
                 append_job_log(run_id, "Persisting judged JSON and CSV outputs...")
                 judged_cfg = dict(cfg)
@@ -227,25 +234,38 @@ def api_run():
 @app.route("/api/judge", methods=["POST"])
 def api_judge():
     cfg = request.json or {}
-    run_id = cfg.get("run_id", "").strip()
+    source_run_id = cfg.get("run_id", "").strip()
     judges = cfg.get("judges") or []
-    if not run_id:
+    if not source_run_id:
         return jsonify({"error": "run_id is required"}), 400
     if not judges:
         return jsonify({"error": "At least one judge model is required"}), 400
 
     task_id = str(uuid.uuid4())[:8]
-    create_job(task_id, cfg, run_id, "judge")
-    append_job_log(task_id, f"Queued judging for saved run {run_id}.")
+    output_run_id = cfg.get("output_run_id") or str(uuid.uuid4())[:8]
+    create_job(task_id, cfg, output_run_id, "judge")
+    append_job_log(task_id, f"Queued judging for saved run {source_run_id}.")
+    append_job_log(task_id, f"Judged output will be saved as new run {output_run_id}.")
     append_job_log(task_id, "Judge models: " + ", ".join(f"{j.get('model')} ({j.get('model_type')})" for j in judges))
 
     def worker():
         def log(msg): append_job_log(task_id, msg)
 
         try:
-            data = load_run(run_id)
+            data = load_run(source_run_id)
             if not data:
-                raise FileNotFoundError(f"Run not found: {run_id}")
+                raise FileNotFoundError(f"Run not found: {source_run_id}")
+
+            existing_index = {r["job_id"]: r for r in load_runs_index()}
+            merged_cfg = dict(existing_index.get(source_run_id, {}).get("config", {}))
+            merged_cfg.update({k: v for k, v in cfg.items() if k != "google_api_key" or v})
+            merged_cfg["judges"] = judges
+            merged_cfg["source_run_id"] = source_run_id
+
+            meta = data.setdefault("meta", {})
+            meta["source_run_id"] = source_run_id
+            meta["derived_from_run_id"] = source_run_id
+            meta["judged_output_run_id"] = output_run_id
 
             updated = judge_saved_run(
                 data,
@@ -253,18 +273,14 @@ def api_judge():
                 ollama_url=cfg.get("ollama_url", "http://localhost:11434"),
                 google_api_key=cfg.get("google_api_key") or None,
                 log_fn=log,
+                checkpoint_fn=lambda partial: persist_run_outputs(output_run_id, partial, merged_cfg),
+                checkpoint_interval=int(cfg.get("checkpoint_interval", 2)),
             )
 
             append_job_log(task_id, "Persisting judged JSON and CSV outputs...")
-            save_results_json(str(RESULTS_DIR / f"{run_id}.json"), updated)
-            save_results_csv(str(RESULTS_DIR / f"{run_id}.csv"), updated)
+            persist_run_outputs(output_run_id, updated, merged_cfg)
 
-            existing_index = {r["job_id"]: r for r in load_runs_index()}
-            merged_cfg = dict(existing_index.get(run_id, {}).get("config", {}))
-            merged_cfg["judges"] = judges
-            add_run(build_run_meta(run_id, updated, merged_cfg))
-
-            append_job_log(task_id, f"Judging complete for run {run_id}.")
+            append_job_log(task_id, f"Judging complete. New judged run saved as {output_run_id}.")
             set_job_status(task_id, "done", updated)
         except Exception as e:
             append_job_log(task_id, f"Fatal error: {str(e)}")
@@ -272,7 +288,7 @@ def api_judge():
             set_job_status(task_id, "error")
 
     threading.Thread(target=worker, daemon=True).start()
-    return jsonify({"job_id": task_id, "run_id": run_id})
+    return jsonify({"job_id": task_id, "run_id": output_run_id, "source_run_id": source_run_id})
 
 
 @app.route("/api/runs/resume/<run_id>", methods=["POST"])
@@ -334,6 +350,7 @@ def api_resume_run(run_id):
                 existing_data=current,
                 checkpoint_fn=checkpoint,
                 resume=True,
+                checkpoint_interval=int(cfg.get("checkpoint_interval", 2)),
             )
 
             append_job_log(task_id, "Persisting resumed target responses...")
@@ -348,6 +365,8 @@ def api_resume_run(run_id):
                     ollama_url=cfg.get("ollama_url", "http://localhost:11434"),
                     google_api_key=cfg.get("google_api_key") or None,
                     log_fn=log,
+                    checkpoint_fn=lambda partial: persist_run_outputs(run_id, partial, {**cfg, "judges": judges}),
+                    checkpoint_interval=int(cfg.get("checkpoint_interval", 2)),
                 )
                 judged_cfg = dict(cfg)
                 judged_cfg["judges"] = judges

@@ -224,8 +224,6 @@
         <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="jailbreak" id="rt-jail"><label class="form-check-label small" for="rt-jail">Jailbreak</label></div>
         <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="harmful" id="rt-harm"><label class="form-check-label small" for="rt-harm">Harmful</label></div>
         <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="hate" id="rt-hate"><label class="form-check-label small" for="rt-hate">Hate</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="distraction" id="rt-dist"><label class="form-check-label small" for="rt-dist">Distraction</label></div>
-        <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="social_bias" id="rt-bias"><label class="form-check-label small" for="rt-bias">Social Bias</label></div>
         <div class="form-check form-check-inline"><input class="form-check-input rtype" type="checkbox" value="prompt_stealing" id="rt-steal"><label class="form-check-label small" for="rt-steal">Prompt Stealing</label></div>
       </div>
 
@@ -367,6 +365,11 @@ function clearLog() {
   document.getElementById("log-box").textContent = "Log cleared.";
 }
 
+function setDisabled(id, disabled) {
+  const el = document.getElementById(id);
+  if (el) el.disabled = disabled;
+}
+
 async function fetchOllamaModels() {
   const url = document.getElementById("ollama-url").value.trim();
   const chipsEl = document.getElementById("ollama-chips");
@@ -482,20 +485,29 @@ async function runTests() {
   setLog(judges.length ? "Starting run with automatic judging...\n" : "Starting response-only run...\n");
   document.getElementById("results-wrap").style.display = "none";
   setStatus("running");
-  document.getElementById("run-btn").disabled = true;
-  document.getElementById("judge-btn").disabled = true;
+  setDisabled("run-btn", true);
+  setDisabled("judge-btn", true);
   latestRunId = null;
 
-  const res = await fetch("/api/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
+  let res, data;
+  try {
+    res = await fetchWithTimeout("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }, 15000);
+    data = await res.json();
+  } catch (e) {
+    setStatus("error");
+    setLog(`Failed to start target run: ${e.message}`);
+    setDisabled("run-btn", false);
+    setDisabled("judge-btn", !latestRunId);
+    return;
+  }
   if (!res.ok) {
     setStatus("error");
     setLog(data.error || "Failed to start target run.");
-    document.getElementById("run-btn").disabled = false;
+    setDisabled("run-btn", false);
     return;
   }
   currentJob = data.job_id;
@@ -506,18 +518,44 @@ async function runTests() {
   pollJob(currentJob, { enableJudgeAfterDone: true });
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (e) {
+    if (e.name === "AbortError") {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function pollJob(jobId, opts = {}) {
   if (pollTimer) clearInterval(pollTimer);
   let lastLogLen = opts.lastLogLen || 0;
   const tick = async () => {
-    const jr = await fetch(`/api/job/${jobId}`);
+    let jr;
+    try {
+      jr = await fetchWithTimeout(`/api/job/${jobId}`, {}, 10000);
+    } catch (e) {
+      clearInterval(pollTimer);
+      setStatus("error");
+      appendLog([`Could not poll job ${jobId}: ${e.message}`]);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setDisabled("run-btn", false);
+      setDisabled("judge-btn", !latestRunId);
+      return;
+    }
     if (!jr.ok) {
       clearInterval(pollTimer);
       setStatus("error");
       appendLog([`Job ${jobId} was not found. It may have ended before this page loaded.`]);
       localStorage.removeItem(ACTIVE_JOB_KEY);
-      document.getElementById("run-btn").disabled = false;
-      document.getElementById("judge-btn").disabled = !latestRunId;
+      setDisabled("run-btn", false);
+      setDisabled("judge-btn", !latestRunId);
       return;
     }
     const jd = await jr.json();
@@ -528,14 +566,14 @@ function pollJob(jobId, opts = {}) {
     }
     if (jd.status === "running") {
       setStatus("running");
-      document.getElementById("run-btn").disabled = true;
-      document.getElementById("judge-btn").disabled = true;
+      setDisabled("run-btn", true);
+      setDisabled("judge-btn", true);
     }
     if (jd.status === "done" || jd.status === "error") {
       clearInterval(pollTimer);
       setStatus(jd.status);
-      document.getElementById("run-btn").disabled = false;
-      document.getElementById("judge-btn").disabled = !opts.enableJudgeAfterDone;
+      setDisabled("run-btn", false);
+      setDisabled("judge-btn", !opts.enableJudgeAfterDone);
       latestRunId = jd.run_id || latestRunId;
       if (latestRunId) localStorage.setItem(LATEST_RUN_KEY, latestRunId);
       localStorage.removeItem(ACTIVE_JOB_KEY);
@@ -553,7 +591,7 @@ function resumeStoredJob() {
   const raw = localStorage.getItem(ACTIVE_JOB_KEY);
   if (!raw) {
     if (latestRunId) {
-      document.getElementById("judge-btn").disabled = false;
+      setDisabled("judge-btn", false);
     }
     return;
   }
@@ -564,8 +602,8 @@ function resumeStoredJob() {
     latestRunId = saved.run_id || latestRunId;
     setLog(`Resuming ${saved.mode || "background"} job ${saved.job_id}...\n`);
     setStatus("running");
-    document.getElementById("run-btn").disabled = true;
-    document.getElementById("judge-btn").disabled = true;
+    setDisabled("run-btn", true);
+    setDisabled("judge-btn", true);
     pollJob(saved.job_id, { enableJudgeAfterDone: true });
   } catch {
     localStorage.removeItem(ACTIVE_JOB_KEY);
@@ -630,7 +668,7 @@ function renderResults(results, jobId) {
   const pct    = judged.length ? Math.round(passed / judged.length * 100) : 0;
   const status = results.meta?.status || "responses_saved";
   setStatus(status === "judged" ? "done" : "pending");
-  document.getElementById("judge-btn").disabled = false;
+  setDisabled("judge-btn", false);
 
   document.getElementById("stat-row").innerHTML = `
     <div class="col-6 col-sm-3">
