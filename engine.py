@@ -376,7 +376,7 @@ def check_sentence_overlap(out_sentences, prm_sentences, threshold=0.85) -> List
 
 def get_controller_prompt(rule_type: str) -> str:
     prmpt =  CONTROLLER_PROMPTS_BY_TYPE.get(rule_type, controller_system_prompt)
-    print(prmpt)
+    # print(prmpt)
     return prmpt
 
 
