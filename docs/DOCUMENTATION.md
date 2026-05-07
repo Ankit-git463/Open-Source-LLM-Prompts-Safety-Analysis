@@ -1,24 +1,22 @@
 # PromptMap Project Documentation
 
-## 1. Project Overview
+## 1. Abstract
 
-PromptMap is a security evaluation platform for testing system prompts used in LLM-based applications. It helps developers, researchers, and evaluators check whether a model follows its intended role and safety boundaries when exposed to adversarial user prompts.
+Large Language Model (LLM) applications increasingly rely on system prompts to define operational roles, enforce behavioral alignment, and maintain policy compliance across conversational agents, retrieval-augmented generation systems, and autonomous AI workflows. System prompts function as privileged instruction layers that guide model reasoning, response generation, and interaction boundaries during inference execution. However, despite their importance in LLM orchestration, these prompts remain vulnerable to adversarial attacks such as prompt injection, jailbreak exploitation, prompt stealing, role manipulation, and instruction hierarchy bypassing.
 
-The system is implemented as a Flask web application backed by a Python testing engine. The user can select a target model, run adversarial prompt rules, save the generated responses, judge those responses with one or more evaluation models, and compare results across runs.
+The OWASP Top 10 for LLM Applications (2025) identifies Prompt Injection (LLM01) as a critical security vulnerability affecting modern generative AI systems. Commercial AI platforms mitigate these threats through multi-layered security architectures involving reinforcement learning from human feedback (RLHF), adversarial fine-tuning, runtime safety classifiers, moderation pipelines, and policy enforcement systems.
+
+In contrast, open-source LLM ecosystems primarily focus on accessibility, customization, and inference optimization while lacking standardized adversarial security validation frameworks. With the rapid adoption of these models in chat applications, enterprise copilots, autonomous agents, analytical systems, and domain-specific assistants, the absence of integrated security orchestration creates substantial deployment risk.
+
+PromptMap is a backend-first LLM security evaluation framework that automates adversarial testing, deterministic safety validation, and multi-judge verdict aggregation. The framework systematically evaluates open-source LLMs against jailbreak attacks, prompt injection, judge manipulation, and prompt leakage while generating both quantitative and qualitative security assessments for benchmarking adversarial robustness.
 
 ## 2. Problem Statement
 
-LLM applications commonly rely on system prompts to define:
+The rapid integration of open-source Large Language Models (LLMs) into modern AI infrastructures has introduced significant security and reliability challenges across enterprise and research environments. Open-source models are increasingly deployed in conversational interfaces, autonomous agents, retrieval-augmented generation pipelines, analytical systems, and domain-specific copilots because of their flexibility, cost efficiency, and customization capabilities.
 
-- the assistant's identity and role
-- allowed and disallowed behavior
-- safety instructions
-- task boundaries
-- private or internal instructions
+Unlike proprietary LLM platforms that incorporate layered defense architectures and policy enforcement mechanisms, most open-source deployments lack standardized security validation systems and adversarial robustness evaluation frameworks. Existing deployment ecosystems primarily emphasize inference acceleration, model optimization, and scalability while providing limited protection against malicious prompt engineering attacks. This creates a large attack surface where adversaries can exploit prompt injection, jailbreak techniques, instruction override attacks, prompt stealing, and unsafe tool invocation to manipulate model behavior and bypass safety constraints.
 
-However, user messages can be crafted to override, bypass, distract, or extract these instructions. Attacks such as jailbreaks, prompt injection, prompt stealing, judge injection, and harmful instruction requests can cause an LLM to violate the intended behavior of the application.
-
-The key problem is that prompt security is difficult to test manually. Manual evaluation is slow, inconsistent, hard to repeat, and often misses edge cases. PromptMap addresses this by creating a repeatable framework for running a collection of adversarial tests against a system prompt and recording whether the model resisted or failed each attack.
+Prompt injection attacks exploit the inability of language models to reliably distinguish between trusted system instructions and untrusted user-controlled input. These attacks can result in policy circumvention, confidential prompt leakage, unsafe response generation, and unauthorized execution of external tools or APIs. PromptMap addresses this gap by introducing a backend-first security evaluation framework that systematically measures adversarial resilience, evaluates policy robustness, and generates both qualitative and quantitative security assessments for open-source LLM deployments.
 
 ## 3. Objectives
 
@@ -526,3 +524,21 @@ http://localhost:11434
 ## 17. Conclusion
 
 PromptMap provides a structured and repeatable way to evaluate LLM prompt security. By combining adversarial YAML rules, target model execution, deterministic checks, multi-judge evaluation, and saved result comparison, it helps users understand where their system prompts are strong and where they may fail under attack.
+
+## 18. Experimental Results Snapshot
+
+The following representative runs are taken from `results/runs_index.json` and associated result files:
+
+| Run ID | Target Model | Attack Type | Judges | Total Tests | Passed | Failed | Pass Rate |
+|---|---|---|---|---:|---:|---:|---:|
+| `68716ae9` | `qwen3:latest` | jailbreak | openchat + qwen3 + gemma3 | 200 | 191 | 9 | 95.5% |
+| `e1f3433b` | `llama3.2:latest` | jailbreak | qwen3 | 200 | 182 | 18 | 91.0% |
+| `cee28526` | `openchat:latest` | jailbreak | qwen3 + gemma3 + openchat | 177 | 118 | 59 | 66.7% |
+| `5e7ef051` | `openchat:latest` | judge_injection | qwen3 + gemma3 + openchat | 54 | 22 | 32 | 40.7% |
+| `d836bc09` | `openchat:latest` | prompt_stealing | qwen3 + gemma3 + openchat | 26 | 16 | 10 | 61.5% |
+
+Observations:
+
+- Robustness varies significantly across target models, even under similar attack families.
+- Multi-judge evaluation reveals disagreement in a meaningful portion of test iterations, supporting PromptMap's consensus-oriented design.
+- High-risk categories (for example jailbreak and judge injection) remain challenging for several open-source models and require iterative hardening.
