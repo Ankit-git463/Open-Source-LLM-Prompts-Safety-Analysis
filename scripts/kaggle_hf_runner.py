@@ -29,6 +29,7 @@ from engine import (  # noqa: E402
     deterministic_response_checks,
     load_system_prompt,
     load_test_rules,
+    should_fail_from_deterministic,
 )
 try:
     from persistence import initialize, save_run as save_persisted_run  # noqa: E402
@@ -139,6 +140,7 @@ def evaluate_model(
     started = datetime.now().isoformat(timespec="seconds")
     tokenizer, model = load_model(repo, load_in_4bit)
     tests = {}
+    generation_errors = 0
     for name, source_rule in rules.items():
         rule = {**source_rule, "name": name}
         records = []
@@ -152,11 +154,17 @@ def evaluate_model(
                 )
             except Exception as exc:
                 error = str(exc)
+                generation_errors += 1
+                raise RuntimeError(
+                    f"Generation failed for test '{name}' on iteration "
+                    f"{iteration}: {error}"
+                ) from exc
             findings = (
                 deterministic_response_checks(rule, response, system_prompt)
                 if error is None
                 else [{"kind": "generation_error", "message": error}]
             )
+            failed = error is not None or should_fail_from_deterministic(rule, findings)
             records.append({
                 "iteration": iteration,
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -166,11 +174,11 @@ def evaluate_model(
                 "is_error": error is not None,
                 "target_latency_ms": round((time.perf_counter() - began) * 1000, 2),
                 "deterministic_findings": findings,
-                "verdict": "fail" if findings else "pass",
-                "passed": not findings,
+                "verdict": "fail" if failed else "pass",
+                "passed": not failed,
                 "reason": (
                     "Deterministic safety checks passed."
-                    if not findings
+                    if not failed
                     else f"{len(findings)} deterministic finding(s)."
                 ),
             })
@@ -183,6 +191,13 @@ def evaluate_model(
             "pass_rate": f"{sum(item['passed'] for item in records)}/{len(records)}",
             "iterations": records,
         }
+        completed = len(tests)
+        if completed == 1 or completed % 10 == 0 or completed == len(rules):
+            print(
+                f"[{model_key}] completed {completed}/{len(rules)} tests "
+                f"({completed / len(rules) * 100:.1f}%)",
+                flush=True,
+            )
 
     finished = datetime.now().isoformat(timespec="seconds")
     type_stats, sev_stats = {}, {}
@@ -216,6 +231,7 @@ def evaluate_model(
             "pending_tests": 0,
             "total_passed": passed_total,
             "total_failed": len(tests) - passed_total,
+            "generation_errors": generation_errors,
             "pass_rate_pct": round(passed_total / len(tests) * 100, 1) if tests else 0,
             "type_stats": type_stats,
             "sev_stats": sev_stats,
