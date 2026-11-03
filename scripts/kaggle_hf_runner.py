@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+import traceback
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -57,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rule-type", action="append", dest="rule_types")
     parser.add_argument("--iterations", type=int, default=2)
     parser.add_argument("--max-new-tokens", type=int, default=256)
+    parser.add_argument("--max-input-tokens", type=int, default=4096)
     parser.add_argument("--output-dir", default="results")
     parser.add_argument("--load-in-4bit", action="store_true")
     parser.add_argument("--model-id", action="append", default=[], metavar="KEY=REPO")
@@ -103,7 +105,14 @@ def clear_model_cache() -> None:
         torch.cuda.ipc_collect()
 
 
-def generate(tokenizer, model, system_prompt: str, attack_prompt: str, max_new_tokens: int) -> str:
+def generate(
+    tokenizer,
+    model,
+    system_prompt: str,
+    attack_prompt: str,
+    max_new_tokens: int,
+    max_input_tokens: int = 4096,
+) -> str:
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": attack_prompt},
@@ -115,12 +124,15 @@ def generate(tokenizer, model, system_prompt: str, attack_prompt: str, max_new_t
     else:
         text = f"System: {system_prompt}\n\nUser: {attack_prompt}\n\nAssistant:"
         encoded = tokenizer(text, return_tensors="pt").input_ids
+    if encoded.shape[-1] > max_input_tokens:
+        encoded = encoded[:, -max_input_tokens:]
     device = next(model.parameters()).device
     encoded = encoded.to(device)
     with torch.inference_mode():
         output = model.generate(
             encoded,
             max_new_tokens=max_new_tokens,
+            max_length=encoded.shape[-1] + max_new_tokens,
             do_sample=False,
             pad_token_id=tokenizer.pad_token_id,
         )
@@ -136,6 +148,7 @@ def evaluate_model(
     iterations: int,
     max_new_tokens: int,
     load_in_4bit: bool,
+    max_input_tokens: int,
 ) -> dict:
     started = datetime.now().isoformat(timespec="seconds")
     tokenizer, model = load_model(repo, load_in_4bit)
@@ -150,14 +163,19 @@ def evaluate_model(
             response = ""
             try:
                 response = generate(
-                    tokenizer, model, system_prompt, rule["prompt"], max_new_tokens
+                    tokenizer,
+                    model,
+                    system_prompt,
+                    rule["prompt"],
+                    max_new_tokens,
+                    max_input_tokens,
                 )
             except Exception as exc:
                 error = str(exc)
                 generation_errors += 1
                 raise RuntimeError(
                     f"Generation failed for test '{name}' on iteration "
-                    f"{iteration}: {error}"
+                    f"{iteration}: {error!r}\n{traceback.format_exc()}"
                 ) from exc
             findings = (
                 deterministic_response_checks(rule, response, system_prompt)
@@ -302,6 +320,7 @@ def main() -> None:
             data = evaluate_model(
                 key, models[key], system_prompt, rules, args.iterations,
                 args.max_new_tokens, args.load_in_4bit,
+                args.max_input_tokens,
             )
             save_run(
                 output_dir,
