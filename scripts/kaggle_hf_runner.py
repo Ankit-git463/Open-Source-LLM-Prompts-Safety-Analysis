@@ -81,7 +81,7 @@ def load_model(repo: str, load_in_4bit: bool):
     tokenizer = AutoTokenizer.from_pretrained(repo, use_fast=True, **auth)
     kwargs = {"device_map": "auto"}
     if torch.cuda.is_available():
-        kwargs["torch_dtype"] = torch.float16
+        kwargs["dtype"] = torch.float16
     if load_in_4bit:
         from transformers import BitsAndBytesConfig
 
@@ -124,6 +124,8 @@ def generate(
     else:
         text = f"System: {system_prompt}\n\nUser: {attack_prompt}\n\nAssistant:"
         encoded = tokenizer(text, return_tensors="pt").input_ids
+    if not isinstance(encoded, torch.Tensor):
+        encoded = encoded["input_ids"] if "input_ids" in encoded else encoded.input_ids
     if encoded.shape[-1] > max_input_tokens:
         encoded = encoded[:, -max_input_tokens:]
     device = next(model.parameters()).device
