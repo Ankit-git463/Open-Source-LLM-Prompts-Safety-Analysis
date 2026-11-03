@@ -92,12 +92,15 @@ Manual testing is slow, inconsistent, and hard to reproduce. PromptMap solves th
 - Two-stage workflow: generate target model responses first, then judge them later.
 - Multi-judge evaluation with vote aggregation.
 - Conservative voting for high-risk categories such as harmful, jailbreak, prompt stealing, and judge injection.
+- Strict judge output validation; malformed or unavailable judge responses fail closed as explicit errors.
 - YAML-based adversarial rule library.
 - Rule filtering by attack type, severity, and rule name.
 - Multiple iterations per rule to catch non-deterministic model behavior.
 - Prompt leak detection using n-gram, sentence overlap, and semantic judge checks.
+- Deterministic prompt-leak checks for strong direct overlap and base64 disclosure, with semantic paraphrase and translation review delegated to judges.
 - Deterministic checks for refusal signals, leaked text, actionable unsafe content, and judge-injection patterns.
 - Result history with persisted run metadata.
+- Per-call target/judge latency, throughput, stage duration, and optional memory metrics.
 - Run comparison across judged test runs.
 - JSON and CSV exports.
 
@@ -154,7 +157,7 @@ Rules, system prompts, results files
 - `Prompts.py`: Stores the default controller system prompt and attack-type-specific judge prompts.
 - `rules/`: Contains YAML test cases. Each rule defines the attack prompt, category, severity, pass conditions, and fail conditions.
 - `SystemPrompts/`: Contains sample system prompts for common assistant roles.
-- `results/`: Stores completed run files and `runs_index.json`.
+- `results/`: Stores the SQLite database and JSON/CSV compatibility exports.
 
 ## Application Flow
 
@@ -166,7 +169,7 @@ Rules, system prompts, results files
 6. `engine.generate_responses()` loads the system prompt and YAML rules.
 7. Each selected rule prompt is sent to the target model.
 8. Raw target responses are stored with timestamps and deterministic findings.
-9. The run is saved to `results/<run_id>.json` and `results/<run_id>.csv`.
+9. The run is saved to SQLite and exported to `results/<run_id>.json` and `results/<run_id>.csv`.
 10. User selects one or more judge models and calls `POST /api/judge`.
 11. `engine.judge_saved_run()` evaluates saved responses using judge prompts and deterministic checks.
 12. Judge votes are aggregated into final pass/fail verdicts.
@@ -220,6 +223,38 @@ For Ollama models, install and run Ollama locally. The default Ollama URL is:
 http://localhost:11434
 ```
 
+## Run Hugging Face Models on Kaggle
+
+The repository includes a sequential Kaggle runner. It loads one Hugging Face
+model at a time, evaluates the existing rules, unloads the model, and writes
+frontend-compatible files under `results/`.
+
+In a Kaggle GPU notebook:
+
+```python
+!pip install -q transformers accelerate sentencepiece safetensors
+!python scripts/kaggle_hf_runner.py --iterations 2 --rule-type prompt_stealing
+```
+
+For lower VRAM environments, add 4-bit loading:
+
+```python
+!pip install -q bitsandbytes
+!python scripts/kaggle_hf_runner.py --load-in-4bit --iterations 2
+```
+
+The runner saves one JSON and CSV file per model plus `results/runs_index.json`.
+Start the Flask app from the repository directory to view the saved runs:
+
+```python
+!python app.py
+```
+
+The Hugging Face runner uses deterministic checks only. Use the frontend's
+Judge Run action afterward when judge-model evaluation is required. Models
+with gated licenses, such as Llama and Gemma, require Kaggle/Hugging Face
+authentication and license acceptance.
+
 ## Run The App
 
 ```bash
@@ -252,14 +287,15 @@ http://localhost:5000
 
 ## Output Files
 
-Every generated run creates:
+Every generated run updates:
 
 ```text
+results/promptmap.sqlite3
 results/<run_id>.json
 results/<run_id>.csv
 ```
 
-The JSON file contains full metadata, rules, iterations, target model responses, judge votes, deterministic findings, verdicts, and summary statistics.
+SQLite is the source of truth. The JSON file contains full metadata, rules, iterations, target model responses, judge votes, deterministic findings, verdicts, and summary statistics.
 
 The CSV file contains a run configuration block, per-test summary rows, and full iteration-level details.
 
