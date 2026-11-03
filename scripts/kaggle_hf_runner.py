@@ -11,6 +11,7 @@ import argparse
 import csv
 import gc
 import json
+import os
 import sys
 import time
 import uuid
@@ -19,6 +20,7 @@ from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from huggingface_hub import get_token
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -71,7 +73,9 @@ def model_map(overrides: list[str]) -> dict[str, str]:
 
 
 def load_model(repo: str, load_in_4bit: bool):
-    tokenizer = AutoTokenizer.from_pretrained(repo, use_fast=True)
+    token = os.environ.get("HF_TOKEN") or get_token()
+    auth = {"token": token} if token else {}
+    tokenizer = AutoTokenizer.from_pretrained(repo, use_fast=True, **auth)
     kwargs = {"device_map": "auto"}
     if torch.cuda.is_available():
         kwargs["torch_dtype"] = torch.float16
@@ -84,7 +88,7 @@ def load_model(repo: str, load_in_4bit: bool):
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
         )
-    model = AutoModelForCausalLM.from_pretrained(repo, **kwargs)
+    model = AutoModelForCausalLM.from_pretrained(repo, **kwargs, **auth)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
     return tokenizer, model
@@ -295,7 +299,16 @@ def main() -> None:
             )
             print(f"Saved {run_id}: {data['meta']['pass_rate_pct']}% deterministic pass rate")
         except Exception as exc:
-            print(f"FAILED {key}: {exc}", file=sys.stderr)
+            message = str(exc)
+            if "gated repo" in message.lower() or "access to model" in message.lower():
+                print(
+                    f"SKIPPED {key}: Hugging Face access is not authorized for "
+                    f"{models[key]}. Accept the model license and grant access "
+                    f"to the logged-in account, then rerun this model.",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"FAILED {key}: {exc}", file=sys.stderr)
         finally:
             clear_model_cache()
             if torch.cuda.is_available():
