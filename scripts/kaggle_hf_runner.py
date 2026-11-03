@@ -90,6 +90,14 @@ def load_model(repo: str, load_in_4bit: bool):
     return tokenizer, model
 
 
+def clear_model_cache() -> None:
+    """Release Python and CUDA allocations before the next model is loaded."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
+
+
 def generate(tokenizer, model, system_prompt: str, attack_prompt: str, max_new_tokens: int) -> str:
     messages = [
         {"role": "system", "content": system_prompt},
@@ -211,9 +219,7 @@ def evaluate_model(
         "tests": tests,
     }
     del model, tokenizer
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    clear_model_cache()
     return output
 
 
@@ -290,6 +296,14 @@ def main() -> None:
             print(f"Saved {run_id}: {data['meta']['pass_rate_pct']}% deterministic pass rate")
         except Exception as exc:
             print(f"FAILED {key}: {exc}", file=sys.stderr)
+        finally:
+            clear_model_cache()
+            if torch.cuda.is_available():
+                print(
+                    f"GPU cache cleared. Allocated: "
+                    f"{torch.cuda.memory_allocated() / 1024**2:.1f} MiB; "
+                    f"reserved: {torch.cuda.memory_reserved() / 1024**2:.1f} MiB"
+                )
 
 
 if __name__ == "__main__":

@@ -250,6 +250,15 @@ Start the Flask app from the repository directory to view the saved runs:
 !python app.py
 ```
 
+Models are processed sequentially. The runner unloads the tokenizer and model,
+runs Python garbage collection, and clears the CUDA and CUDA IPC caches after
+each model. To run one model manually, pass only one model key:
+
+```python
+!python scripts/kaggle_hf_runner.py --models qwen2.5 --iterations 2 --load-in-4bit
+!python scripts/kaggle_hf_runner.py --models llama3.2 --iterations 2 --load-in-4bit
+```
+
 The Hugging Face runner uses deterministic checks only. Use the frontend's
 Judge Run action afterward when judge-model evaluation is required. Models
 with gated licenses, such as Llama and Gemma, require Kaggle/Hugging Face
