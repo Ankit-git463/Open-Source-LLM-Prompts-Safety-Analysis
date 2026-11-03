@@ -28,7 +28,11 @@ from engine import (  # noqa: E402
     load_system_prompt,
     load_test_rules,
 )
-from persistence import initialize, save_run as save_persisted_run  # noqa: E402
+try:
+    from persistence import initialize, save_run as save_persisted_run  # noqa: E402
+except ImportError:
+    initialize = None
+    save_persisted_run = None
 
 
 DEFAULT_MODELS = {
@@ -250,9 +254,10 @@ def save_run(output_dir: Path, run_id: str, data: dict, config: dict) -> None:
         "config": config,
     })
     index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
-    database_path = output_dir / "promptmap.sqlite3"
-    initialize(str(database_path))
-    save_persisted_run(str(database_path), run_id, data, config)
+    if initialize is not None and save_persisted_run is not None:
+        database_path = output_dir / "promptmap.sqlite3"
+        initialize(str(database_path))
+        save_persisted_run(str(database_path), run_id, data, config)
 
 
 def main() -> None:
